@@ -386,6 +386,10 @@
 	let serverContextUsage = null;
 	let contextUsage = null;
 
+	$: firstPinnedChatModel = $pinnedModels.find((id: string) =>
+		$models?.some((model) => model.id === id && !model.info?.meta?.hidden)
+	);
+
 	const normalizeSelectedModels = (modelIds: string[] = []) => {
 		if (
 			isMachineAvailable($selectedMachineId) &&
@@ -415,10 +419,7 @@
 			!selectedModels?.some((modelId) => modelId) &&
 			!modelSearchParam
 		) {
-			const firstPin = $pinnedModels.find((id) =>
-				$models.some((model) => model.id === id && !model.info?.meta?.hidden)
-			);
-			const fallbackModels = normalizeSelectedModels(firstPin ? [firstPin] : selectedModels);
+			const fallbackModels = normalizeSelectedModels(firstPinnedChatModel ? [firstPinnedChatModel] : selectedModels);
 			if (!equal(fallbackModels, selectedModels)) {
 				selectedModels = fallbackModels;
 				if (!loading && !modelDefaults) setDefaults();
@@ -3232,9 +3233,8 @@
 				}
 				selectedModels = normalizeSelectedModels(destinationFolder.data?.model_ids ?? []);
 			} else {
-				const firstPin = $pinnedModels.find((id) => availableModels.includes(id));
-				if (firstPin) {
-					selectedModels = [firstPin];
+				if (firstPinnedChatModel) {
+					selectedModels = [firstPinnedChatModel];
 					sessionStorage.removeItem('selectedModels');
 				} else if (sessionStorage.selectedModels) {
 					// Set from session storage (temporary selection)
