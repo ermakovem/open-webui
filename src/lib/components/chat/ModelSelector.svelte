@@ -40,14 +40,21 @@
 		toast.success($i18n.t('Default model updated'));
 	};
 
-	const pinModelHandler = async (modelId) => {
-		settings.set({
-			...$settings,
-			pinnedModels: $pinnedModels.includes(modelId)
+	let pendingPins = Promise.resolve();
+	const pinModelHandler = (modelId: string) => {
+		pendingPins = pendingPins.then(async () => {
+			const next = $pinnedModels.includes(modelId)
 				? $pinnedModels.filter((id) => id !== modelId)
-				: [...$pinnedModels, modelId]
+				: [...$pinnedModels, modelId];
+			try {
+				const saved = await updateUserSettings(localStorage.token, { ui: { pinnedModels: next } });
+				if (!saved) throw new Error();
+				settings.update((current) => ({ ...current, pinnedModels: next }));
+			} catch {
+				toast.error('Не удалось сохранить избранное');
+			}
 		});
-		await updateUserSettings(localStorage.token, { ui: { pinnedModels: $settings.pinnedModels } });
+		return pendingPins;
 	};
 
 	$: if (selectedModels.length > 0 && ($models ?? []).length > 0) {
@@ -85,6 +92,7 @@
 				<Selector
 					bind:this={selector}
 					id="model"
+					subscriptionPicker
 					placeholder={$i18n.t('Select a model')}
 					items={($models ?? []).map((model) => ({
 						value: model.id,

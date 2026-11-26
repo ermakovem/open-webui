@@ -41,7 +41,7 @@ from open_webui.routers.images import (
     image_generations,
 )
 from open_webui.routers.videos import CreateVideoForm, video_generations
-from open_webui.utils.images.connections import get_requested_image_model
+from open_webui.utils.images.connections import get_image_model_label, get_requested_image_model
 from open_webui.utils.videos.connections import get_requested_video_model
 from open_webui.routers.memories import (
     AddMemoryForm,
@@ -355,6 +355,79 @@ async def fetch_url(
 # Image generation tools
 
 
+async def _run_image_batch(operation, form, models, strict, request, user, metadata, chat_id, message_id, emit, event_call):
+    channel_metadata = (
+        {'channel_id': chat_id.removeprefix('channel:'), 'message_id': message_id}
+        if isinstance(chat_id, str) and chat_id.startswith('channel:') else None
+    )
+    slots = asyncio.Semaphore(3)
+
+    async def run_model(model):
+        async with slots:
+            try:
+                return await operation(
+                    request=request, user=user, metadata=channel_metadata, strict=strict,
+                    form_data=form.model_copy(update={'model': model}),
+                )
+            except Exception as exc:
+                # Upstream error text can include headers, request data or account identifiers.
+                log.warning('Image tool failed for %s (%s)', get_image_model_label(model), type(exc).__name__)
+                return []
+
+    groups = await asyncio.gather(*(run_model(model) for model in models))
+    images = [image for group in groups if group for image in group]
+    failed = [get_image_model_label(model) for model, group in zip(models, groups) if not group]
+    result = {'status': 'success', 'images': images}
+    if failed:
+        description = 'Не удалось получить изображение от модели: ' + ', '.join(failed)
+        result.update(status='partial' if images else 'error', failed_models=failed)
+        if not images:
+            result['error'] = description
+        if emit:
+            await emit({'type': 'status', 'data': {'description': description, 'done': True}})
+
+    if images:
+        await upload_files_to_machine(request, user, images, metadata, {'__event_call__': event_call})
+        image_files = [{'type': 'image', **image} for image in images]
+        if is_saved_chat_id(chat_id) and message_id:
+            saved = await Chats.add_message_files_by_id_and_message_id(chat_id, message_id, image_files)
+            if saved is not None:
+                image_files = saved
+        if emit and image_files:
+            await emit({'type': 'chat:message:files', 'data': {'files': image_files}})
+            result['message'] = (
+                'Images are already visible in chat. Use machine_path with machine tools or '
+                'display_file when available to continue the requested task.'
+            )
+    return JSONCodec.dumps(result, ensure_ascii=False)
+
+
+async def _run_image_tool(operation, form, request, user, metadata, chat_id, message_id, emit, event_call):
+    metadata = metadata or {}
+    choice = (metadata.get('features') or {}).get('image_generation')
+    explicit = isinstance(choice, dict) and 'models' in choice
+    if explicit:
+        refs = choice['models']
+        if not isinstance(refs, list) or not refs or not all(isinstance(ref, str) and ref.strip() for ref in refs):
+            return JSONCodec.dumps({'error': 'Select at least one valid image model.'})
+        models = tuple(dict.fromkeys(ref.strip() for ref in refs))
+    else:
+        models = (get_requested_image_model(metadata),)
+
+    args = operation, form, models, explicit, request, user, metadata, chat_id, message_id, emit, event_call
+    if not explicit or not message_id:
+        return await _run_image_batch(*args)
+
+    # Native tool calls can repeat during the same response, including before the first call finishes.
+    jobs = getattr(request.state, 'nmb_image_jobs', None)
+    if jobs is None:
+        jobs = request.state.nmb_image_jobs = {}
+    key = (chat_id, message_id, operation, models, form.prompt, form.size, tuple(getattr(form, 'image', ())))
+    if key not in jobs:
+        jobs[key] = asyncio.create_task(_run_image_batch(*args))
+    return await jobs[key]
+
+
 async def generate_image(
     prompt: str,
     size: Optional[str] = None,
@@ -367,7 +440,7 @@ async def generate_image(
     __event_call__: callable = None,
 ) -> str:
     """
-    Generate an image based on a text prompt.
+    Create a new image from text when the user asks for an image. For a change to an attached photo, use edit_image.
 
     :param prompt: A detailed description of the image to generate
     :param size: Optional output size in WIDTHxHEIGHT pixels (e.g. "1536x1024"), supported by the configured image model.
@@ -380,56 +453,10 @@ async def generate_image(
     try:
         user = UserModel(**__user__) if __user__ else None
 
-        images = await image_generations(
-            request=__request__,
-            form_data=CreateImageForm(prompt=prompt, size=size, model=get_requested_image_model(__metadata__)),
-            metadata=(
-                {'channel_id': __chat_id__.removeprefix('channel:'), 'message_id': __message_id__}
-                if isinstance(__chat_id__, str) and __chat_id__.startswith('channel:')
-                else None
-            ),
-            user=user,
+        return await _run_image_tool(
+            image_generations, CreateImageForm(prompt=prompt, size=size), __request__, user, __metadata__,
+            __chat_id__, __message_id__, __event_emitter__, __event_call__,
         )
-
-        await upload_files_to_machine(__request__, user, images, __metadata__ or {}, {'__event_call__': __event_call__})
-
-        # Prepare file entries for the images
-        image_files = [{'type': 'image', **img} for img in images]
-
-        # Persist files to DB if chat context is available
-        if is_saved_chat_id(__chat_id__) and __message_id__ and images:
-            db_files = await Chats.add_message_files_by_id_and_message_id(
-                __chat_id__,
-                __message_id__,
-                image_files,
-            )
-            if db_files is not None:
-                image_files = db_files
-
-        # Emit the images to the UI if event emitter is available
-        if __event_emitter__ and image_files:
-            await __event_emitter__(
-                {
-                    'type': 'chat:message:files',
-                    'data': {
-                        'files': image_files,
-                    },
-                }
-            )
-            # Return a message indicating the image is already displayed
-            return JSONCodec.dumps(
-                {
-                    'status': 'success',
-                    'message': (
-                        'The image is already visible in chat. Use machine_path with machine tools or '
-                        'display_file when available to continue the requested task.'
-                    ),
-                    'images': images,
-                },
-                ensure_ascii=False,
-            )
-
-        return JSONCodec.dumps({'status': 'success', 'images': images}, ensure_ascii=False)
     except Exception as e:
         log.exception(f'generate_image error: {e}')
         return JSONCodec.dumps({'error': str(e)})
@@ -437,7 +464,7 @@ async def generate_image(
 
 async def edit_image(
     prompt: str,
-    image_urls: list[str],
+    image_urls: Optional[list[str]] = None,
     size: Optional[str] = None,
     __request__: Request = None,
     __user__: dict = None,
@@ -452,7 +479,7 @@ async def edit_image(
     Supports targeted edits such as adding, removing, replacing, inpainting, extending, or compositing image content.
 
     :param prompt: A description of the transformation to apply to the provided images
-    :param image_urls: Source image URLs or absolute file paths to modify or use as composition inputs
+    :param image_urls: Omit for current user attachments (automatically supplied). Otherwise pass earlier image URLs or file paths.
     :param size: Optional output size in WIDTHxHEIGHT pixels (e.g. "1536x1024"), supported by the configured image model.
         Omit to use the configured default.
     :return: Image URLs and, when a terminal is selected, machine_path for display_file or further processing.
@@ -463,64 +490,23 @@ async def edit_image(
     try:
         user = UserModel(**__user__) if __user__ else None
 
+        source = getattr(__request__.state, 'nmb_photo_edit', None)
+        if source:
+            image_urls, original_prompt = source
+            prompt = original_prompt or prompt
+        if not image_urls:
+            return JSONCodec.dumps({'error': 'Attach a source photo or supply an earlier image URL to edit.'})
+
         resolved_images = []
         for url in image_urls:
             if (url.startswith('/') or ntpath.isabs(url)) and not url.startswith('/api/v1/files/'):
                 data = await get_machine_file(__request__, user, __metadata__ or {}, url, max_bytes=50 * 1024 * 1024)
                 url = await asyncio.to_thread(get_image_data_url, data)
             resolved_images.append(url)
-        images = await image_edits(
-            request=__request__,
-            form_data=EditImageForm(
-                prompt=prompt, image=resolved_images, size=size, model=get_requested_image_model(__metadata__)
-            ),
-            metadata=(
-                {'channel_id': __chat_id__.removeprefix('channel:'), 'message_id': __message_id__}
-                if isinstance(__chat_id__, str) and __chat_id__.startswith('channel:')
-                else None
-            ),
-            user=user,
+        return await _run_image_tool(
+            image_edits, EditImageForm(prompt=prompt, image=resolved_images, size=size), __request__, user, __metadata__,
+            __chat_id__, __message_id__, __event_emitter__, __event_call__,
         )
-
-        await upload_files_to_machine(__request__, user, images, __metadata__ or {}, {'__event_call__': __event_call__})
-
-        # Prepare file entries for the images
-        image_files = [{'type': 'image', **img} for img in images]
-
-        # Persist files to DB if chat context is available
-        if is_saved_chat_id(__chat_id__) and __message_id__ and images:
-            db_files = await Chats.add_message_files_by_id_and_message_id(
-                __chat_id__,
-                __message_id__,
-                image_files,
-            )
-            if db_files is not None:
-                image_files = db_files
-
-        # Emit the images to the UI if event emitter is available
-        if __event_emitter__ and image_files:
-            await __event_emitter__(
-                {
-                    'type': 'chat:message:files',
-                    'data': {
-                        'files': image_files,
-                    },
-                }
-            )
-            # Return a message indicating the image is already displayed
-            return JSONCodec.dumps(
-                {
-                    'status': 'success',
-                    'message': (
-                        'The edited image is already visible in chat. Use machine_path with machine tools or '
-                        'display_file when available to continue the requested task.'
-                    ),
-                    'images': images,
-                },
-                ensure_ascii=False,
-            )
-
-        return JSONCodec.dumps({'status': 'success', 'images': images}, ensure_ascii=False)
     except Exception as e:
         log.exception(f'edit_image error: {e}')
         return JSONCodec.dumps({'error': str(e)})

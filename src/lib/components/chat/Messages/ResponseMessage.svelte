@@ -81,7 +81,7 @@
 		content: string;
 		output?: OutputItem[];
 		contextSummary?: string;
-		files?: { type: string; url: string }[];
+		files?: { type: string; url: string; nmb_model?: string }[];
 		timestamp: number;
 		role: string;
 		statusHistory?: {
@@ -809,6 +809,9 @@
 									<div>
 										{#if file.type === 'image' || (file?.content_type ?? '').startsWith('image/')}
 											<Image src={file.url} alt={file.name || $i18n.t('Generated Image')} />
+											{#if file.nmb_model}
+												<p class="mt-1 break-words text-xs text-base-600 dark:text-base-400">{file.nmb_model}</p>
+											{/if}
 										{:else if file.type === 'video' || (file?.content_type ?? '').startsWith('video/')}
 											<!-- svelte-ignore a11y-media-has-caption -->
 											<video

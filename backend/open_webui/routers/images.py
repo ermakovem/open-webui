@@ -49,6 +49,7 @@ from open_webui.utils.images.connections import (
     IMAGE_CONNECTIONS_CONFIG_KEY,
     IMAGE_EDIT_DEFAULT_MODEL_CONFIG_KEY,
     IMAGE_GENERATION_DEFAULT_MODEL_CONFIG_KEY,
+    get_image_model_label,
     get_image_model_ref,
     get_image_models,
     get_openai_connection_models,
@@ -535,6 +536,7 @@ async def upload_image(request, image_data, content_type, metadata, user, db=Non
     url = request.app.url_path_for('get_file_content_by_id', id=file_item.id)
     return file_item, {
         'id': file_item.id,
+        **({'nmb_model': metadata['nmb_model']} if metadata.get('nmb_model') else {}),
         'url': url,
         'name': (file_item.meta or {}).get('name') or file_item.filename,
         'content_type': (file_item.meta or {}).get('content_type'),
@@ -598,7 +600,7 @@ async def image_generations(
 
     width, height = tuple(map(int, size.split('x')))
 
-    metadata = metadata or {}
+    metadata = {**(metadata or {}), 'nmb_model': get_image_model_label(model or connection.get('name'))}
 
     try:
         if connection['type'] == 'openai':
@@ -940,7 +942,7 @@ async def image_edits(
     connection_size = connection_config.get('edit_size') or ''
     size = None
     width, height = None, None
-    metadata = metadata or {}
+    metadata = {**(metadata or {}), 'nmb_model': get_image_model_label(model or connection.get('name'))}
 
     if 'x' in connection_size or (form_data.size and 'x' in form_data.size):
         size = form_data.size if form_data.size else connection_size

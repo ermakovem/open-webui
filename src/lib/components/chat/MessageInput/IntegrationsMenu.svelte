@@ -20,6 +20,7 @@
 	import { deleteOAuthSession } from '$lib/apis/auths';
 	import { getTools } from '$lib/apis/tools';
 	import { getSkills } from '$lib/apis/skills';
+	import { updateUserSettings } from '$lib/apis/users';
 	import { getImageModels } from '$lib/apis/images';
 	import { getVideoModels } from '$lib/apis/videos';
 	import { listMachineSkills, resolveMachineTarget, type MachineSkill } from '$lib/apis/machines';
@@ -30,6 +31,8 @@
 	import Tooltip from '$lib/components/common/Tooltip.svelte';
 	import Switch from '$lib/components/common/Switch.svelte';
 	import Spinner from '$lib/components/common/Spinner.svelte';
+	import ImageModelMenu from './ImageModelMenu.svelte';
+	import { imageChoices } from '$lib/utils/nmbImageChoices';
 	import SearchInput from './InputMenu/SearchInput.svelte';
 	import Wrench from '$lib/components/icons/Wrench.svelte';
 	import Cube from '$lib/components/icons/Cube.svelte';
@@ -106,7 +109,24 @@
 	let skillSearchDebounceTimer: ReturnType<typeof setTimeout>;
 	let toolRequestId = 0;
 	let skillRequestId = 0;
-	let imageModelQuery = '';
+	let savingChoice = false;
+	$: chosenImages = imageChoices($settings);
+	$: searchAllowed = $settings?.nmbWebSearchEnabled !== false;
+
+	async function setWebSearch(value: boolean) {
+		if (savingChoice) return;
+		savingChoice = true;
+		try {
+			const result = await updateUserSettings(localStorage.token, {ui: {nmbWebSearchEnabled: value}});
+			if (!result || result.ui?.nmbWebSearchEnabled !== value) throw new Error();
+			settings.update((current) => ({ ...current, nmbWebSearchEnabled: value }));
+			tab = '';
+		} catch {
+			toast.error('Не удалось сохранить настройку');
+		} finally {
+			savingChoice = false;
+		}
+	}
 	let videoModelQuery = '';
 
 	const isDeviceTool = (id: string) =>
@@ -154,20 +174,8 @@
 				return groups;
 			}, {})
 	);
-	$: selectedImageModel = imageModelOptions.find((model) => model.id === selectedImageModelId);
-	$: imageModelGroups = Object.entries(
-		imageModelOptions
-			.filter((model) =>
-				`${model.name} ${model.model} ${model.connection_name}`
-					.toLowerCase()
-					.includes(imageModelQuery.trim().toLowerCase())
-			)
-			.reduce<Record<string, typeof imageModelOptions>>((groups, model) => {
-				(groups[model.connection_name] ??= []).push(model);
-				return groups;
-			}, {})
-	);
-
+	$: selectedImageName = imageModelOptions.find((model) => model.id === chosenImages[0])?.name ?? chosenImages[0]?.split('/').pop();
+	$: imageSummary = chosenImages.length > 1 ? 'Выбрано моделей: ' + chosenImages.length : selectedImageName;
 	// This content mounts already open; initialize after the derived lists have been set up.
 	onMount(() => {
 		void init();
@@ -498,58 +506,14 @@
 		{/if}
 
 		{#if showImageGenerationButton}
-			<Tooltip content={$i18n.t('Generate an image')} placement="top-start">
-				<div
-					class="flex w-full justify-between gap-2 items-center h-[1.6875rem] px-2 text-[0.8125rem] font-normal cursor-pointer rounded-xl hover:bg-base-50/40 dark:hover:bg-base-800/40 has-[[role^=menuitem]:focus-visible]:outline-2 has-[[role^=menuitem]:focus-visible]:-outline-offset-2 has-[[role^=menuitem]:focus-visible]:outline-blue-500"
-					role="presentation"
-					on:click={() => {
-						imageGenerationEnabled = !imageGenerationEnabled;
-					}}
-				>
-					<button
-						type="button"
-						class="flex-1 truncate text-left cursor-pointer focus-visible:outline-none!"
-						role="menuitemcheckbox"
-						aria-checked={imageGenerationEnabled}
-					>
-						<div class="flex flex-1 gap-2 items-center">
-							<div class="shrink-0">
-								<Photo className="size-3.5" strokeWidth="1.5" />
-							</div>
-
-							<div class=" truncate">
-								{$i18n.t('Image')}
-								{#if imageModelOptions.length > 1}
-									<span class="ml-0.5 text-xs text-base-500">
-										{selectedImageModel?.name ?? $i18n.t('Default')}
-									</span>
-								{/if}
-							</div>
-						</div>
-					</button>
-
-					<div class="flex shrink-0 items-center gap-1.5">
-						{#if imageModelOptions.length > 1}
-							<button
-								type="button"
-								role="menuitem"
-								class="flex items-center text-base-500 hover:text-base-700 dark:hover:text-base-300 transition"
-								aria-label={$i18n.t('Choose image model')}
-								on:click={(e) => {
-									e.stopPropagation();
-									tab = 'image';
-								}}
-							>
-								<ChevronRight />
-							</button>
-						{/if}
-
-						<div inert>
-							<Switch state={imageGenerationEnabled} />
-						</div>
-					</div>
-				</div>
-			</Tooltip>
+			<button type="button" role="menuitem" aria-haspopup="menu"
+				class="flex w-full items-center gap-2 min-h-[1.6875rem] py-1 px-2 text-[0.8125rem] rounded-xl hover:bg-base-50/40 dark:hover:bg-base-800/40"
+				on:click={() => { tab = 'image'; }}>
+				<Photo className="size-3.5 shrink-0" strokeWidth="1.5" />
+				<span class="shrink-0">{$i18n.t('Image')}</span>
+				<span class="min-w-0 flex-1 whitespace-normal [overflow-wrap:anywhere] leading-tight text-right text-xs text-base-500">{imageSummary ?? $i18n.t('Default')}</span>
+				<ChevronRight />
+			</button>
 		{/if}
 
 		{#if showVideoGenerationButton}
@@ -608,35 +572,13 @@
 		{/if}
 
 		{#if showWebSearchButton}
-			<Tooltip content={$i18n.t('Search the internet')} placement="top-start">
-				<button
-					class="flex w-full justify-between gap-2 items-center h-[1.6875rem] px-2 text-[0.8125rem] font-normal cursor-pointer rounded-xl hover:bg-base-50/40 dark:hover:bg-base-800/40"
-					role="menuitemcheckbox"
-					aria-checked={webSearchEnabled}
-					on:click={() => {
-						webSearchEnabled = !webSearchEnabled;
-						// Left open, this menu would swallow the first click on the confirmation dialog
-						if (webSearchEnabled && $config?.features?.enable_web_search_confirmation) {
-							show = false;
-						}
-						onWebSearchToggle(webSearchEnabled);
-					}}
-				>
-					<div class="flex-1 truncate">
-						<div class="flex flex-1 gap-2 items-center">
-							<div class="shrink-0">
-								<GlobeAlt className="size-3.5" strokeWidth="1.5" />
-							</div>
-
-							<div class=" truncate">{$i18n.t('Web Search')}</div>
-						</div>
-					</div>
-
-					<div class=" shrink-0" inert>
-						<Switch state={webSearchEnabled} />
-					</div>
-				</button>
-			</Tooltip>
+			<button type="button" role="menuitemcheckbox" aria-checked={searchAllowed} disabled={savingChoice}
+				class="flex w-full items-center gap-2 h-[1.6875rem] px-2 text-[0.8125rem] rounded-xl hover:bg-base-50/40 dark:hover:bg-base-800/40"
+				on:click={() => setWebSearch(!searchAllowed)}>
+				<GlobeAlt className="size-3.5 shrink-0" strokeWidth="1.5" />
+				<span class="flex-1 text-left">{$i18n.t('Web Search')}</span>
+				<span inert><Switch state={searchAllowed} /></span>
+			</button>
 		{/if}
 
 		{#if showCodeInterpreterButton}
@@ -907,94 +849,7 @@
 		</div>
 	</div>
 {:else if tab === 'image'}
-	<div class="flex min-h-0 flex-col gap-0.5 overflow-hidden" in:fly={{ x: 20, duration: 150 }}>
-		<button
-			role="menuitem"
-			class="flex w-full shrink-0 justify-between gap-2 items-center h-[1.6875rem] px-2 text-[0.8125rem] font-normal cursor-pointer rounded-xl hover:bg-base-50/40 dark:hover:bg-base-800/40"
-			on:click={() => {
-				imageModelQuery = '';
-				tab = '';
-			}}
-		>
-			<ChevronLeft />
-
-			<div class="flex items-center w-full justify-between">
-				<div>
-					{$i18n.t('Image model')}
-					<span class="ml-0.5 text-base-500">{imageModelOptions.length}</span>
-				</div>
-			</div>
-		</button>
-
-		{#if imageModelOptions.length > 6}
-			<SearchInput bind:value={imageModelQuery} placeholder={$i18n.t('Search image models')} />
-		{/if}
-
-		<div class="min-h-0 flex-1 overflow-y-auto overflow-x-hidden scrollbar-thin">
-			<div class="flex flex-col gap-0.5" role="group" aria-label={$i18n.t('Image model')}>
-				{#if !imageModelQuery.trim()}
-					<button
-						type="button"
-						role="menuitemradio"
-						aria-checked={!selectedImageModelId}
-						class="flex w-full justify-between gap-2 items-center h-[1.6875rem] px-2 text-[0.8125rem] font-normal cursor-pointer rounded-xl hover:bg-base-50/40 dark:hover:bg-base-800/40"
-						on:click={() => {
-							selectedImageModelId = '';
-							imageGenerationEnabled = true;
-							tab = '';
-						}}
-					>
-						<div class="truncate">{$i18n.t('Default')}</div>
-						{#if !selectedImageModelId}
-							<Check className="size-3.5 shrink-0" strokeWidth="2" />
-						{/if}
-					</button>
-				{/if}
-
-				{#each imageModelGroups as [label, models] (label)}
-					{#if imageModelGroups.length > 1}
-						<div class="truncate px-2 pt-1.5 pb-0.5 text-xs text-base-400 dark:text-base-500">
-							{label}
-						</div>
-					{/if}
-
-					{#each models as model (model.id)}
-						<button
-							type="button"
-							role="menuitemradio"
-							aria-checked={selectedImageModelId === model.id}
-							class="flex w-full justify-between gap-2 items-center h-[1.6875rem] px-2 text-[0.8125rem] font-normal cursor-pointer rounded-xl hover:bg-base-50/40 dark:hover:bg-base-800/40"
-							on:click={() => {
-								selectedImageModelId = model.id;
-								imageGenerationEnabled = true;
-								imageModelQuery = '';
-								tab = '';
-							}}
-						>
-							<div class="flex min-w-0 items-center gap-2">
-								<div class="truncate">{model.name}</div>
-								<div class="shrink-0 text-xs text-base-400 dark:text-base-500">
-									{#if model.image_generation && model.image_edit}
-										{$i18n.t('Generate and edit')}
-									{:else if model.image_edit}
-										{$i18n.t('Edit only')}
-									{/if}
-								</div>
-							</div>
-
-							{#if selectedImageModelId === model.id}
-								<Check className="size-3.5 shrink-0" strokeWidth="2" />
-							{/if}
-						</button>
-					{/each}
-				{:else}
-					<div class="text-center text-xs text-base-500 py-3">
-						{$i18n.t('No image models found')}
-					</div>
-				{/each}
-			</div>
-		</div>
-	</div>
+	<ImageModelMenu options={imageModelOptions} goBack={() => { tab = ''; }} />
 {:else if tab === 'video'}
 	<div class="flex min-h-0 flex-col gap-0.5 overflow-hidden" in:fly={{ x: 20, duration: 150 }}>
 		<button

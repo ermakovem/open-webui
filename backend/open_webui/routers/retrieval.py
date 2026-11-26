@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import Callable, Iterator, Optional, Sequence, Union
 from urllib.parse import unquote, urlparse
 
+import httpx
 import tiktoken
 from fastapi import (
     APIRouter,
@@ -126,6 +127,7 @@ from open_webui.storage.provider import Storage
 from open_webui.utils.access_control import has_permission
 from open_webui.utils.access_control.files import has_access_to_file
 from open_webui.utils.auth import get_admin_user, get_verified_user
+from open_webui.utils.headers import include_user_info_headers
 from open_webui.utils.misc import (
     calculate_sha256_string,
     sanitize_text_for_db,
@@ -2274,6 +2276,26 @@ async def search_web(
     # TODO: add playwright to search the web
     if config is None:
         config = await Config.get_many(*RETRIEVAL_CONFIG_KEYS.values())
+    if engine == 'nmb_subscription':
+        if user is None:
+            raise HTTPException(401, 'Требуется вход в чат')
+        ui = (user.settings.ui if user.settings else None) or {}
+        if ui.get('nmbWebSearchEnabled', True) is False:
+            raise HTTPException(403, 'Веб-поиск выключен для этого профиля')
+        payload = {
+            'query': query,
+            'count': min(10, max(1, config['web.search.result_count'] or 3)),
+        }
+        headers = include_user_info_headers(
+            {'Authorization': 'Bearer ' + os.environ['OPENAI_API_KEYS']}, user, request=request
+        )
+        async with httpx.AsyncClient(trust_env=False, timeout=300, follow_redirects=False) as client:
+            response = await client.post(
+                'http://127.0.0.1:19441/internal/v1/web-search', json=payload, headers=headers
+            )
+        if not response.is_success:
+            raise ValueError(response.json().get('detail') or 'Поиск временно недоступен')
+        return [SearchResult(**item) for item in response.json()]
     if engine == 'ollama_cloud':
         return await asyncio.to_thread(
             search_ollama_cloud,
@@ -2720,7 +2742,7 @@ async def process_web_search(request: Request, form_data: SearchForm, user=Depen
         )
 
     try:
-        if config['web.search.bypass_web_loader']:
+        if config['web.search.engine'] == 'nmb_subscription' or config['web.search.bypass_web_loader']:
             search_results = [item for result in search_results for item in result if result]
 
             docs = [

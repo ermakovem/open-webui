@@ -693,6 +693,7 @@ async def get_builtin_tools(
     config = await Config.get_many(
         'memories.enable',
         'web.search.enable',
+        'web.search.engine',
         'image_generation.enable',
         'images.edit.enable',
         'video_generation.enable',
@@ -876,10 +877,15 @@ async def get_builtin_tools(
         is_builtin_tool_enabled('web_search')
         and config.get('web.search.enable')
         and get_model_capability('web_search')
-        and features.get('web_search')
+        and (
+            ((user.get('settings') or {}).get('ui') or {}).get('nmbWebSearchEnabled', True) is not False
+            if config.get('web.search.engine') == 'nmb_subscription' else features.get('web_search')
+        )
         and await has_user_permission('web_search')
     ):
-        builtin_functions.extend([search_web, fetch_url])
+        builtin_functions.append(search_web)
+        if config.get('web.search.engine') != 'nmb_subscription':
+            builtin_functions.append(fetch_url)
 
     # Add image generation/edit tools if builtin category enabled,
     # globally enabled, and allowed by model capability.

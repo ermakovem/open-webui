@@ -25,7 +25,6 @@
 		socket,
 		onSocketRestored,
 		config,
-		visiblePinnedModels,
 		visibleControls,
 		selectedFolder,
 		WEBUI_NAME,
@@ -109,7 +108,6 @@
 	import ChannelItem from './Sidebar/ChannelItem.svelte';
 	import SearchModal from './SearchModal.svelte';
 	import FolderModal from './Sidebar/Folders/FolderModal.svelte';
-	import PinnedModelList from './Sidebar/PinnedModelList.svelte';
 	import PinnedNoteList from './Sidebar/PinnedNoteList.svelte';
 	import CalendarIcon from './Sidebar/icons/Calendar.svelte';
 	import ClockIcon from './Sidebar/icons/Clock.svelte';
@@ -261,7 +259,6 @@
 
 	let showCreateFolderModal = false;
 
-	let showPinnedModels = true;
 	let showPinnedNotes = false;
 	let showChannels = false;
 	$: channelGroups = [
@@ -1578,16 +1575,6 @@
 						</div>
 					</div>
 
-					{#if $visiblePinnedModels.length > 0}
-						<SidebarSection
-							id="sidebar-models"
-							bind:open={showPinnedModels}
-							name={$i18n.t('Models')}
-							dragAndDrop={false}
-						>
-							<PinnedModelList bind:selectedChatId {shiftKey} />
-						</SidebarSection>
-					{/if}
 
 					{#if ($config?.features?.enable_notes ?? false) && ($user?.role === 'admin' || ($user?.permissions?.features?.notes ?? true)) && $pinnedNotes.length > 0}
 						<SidebarSection

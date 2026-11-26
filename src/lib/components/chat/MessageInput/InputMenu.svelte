@@ -191,7 +191,7 @@
 
 	<div slot="content" class="flex min-h-0 flex-col">
 		<DropdownMenu
-			className="w-70 min-h-0 transition {hasInternalList
+			className="{tab === 'image' ? 'w-80' : 'w-70'} max-w-[calc(100vw-1.5rem)] min-h-0 transition {hasInternalList
 				? 'flex flex-col overflow-hidden'
 				: 'overflow-y-auto overflow-x-hidden scrollbar-thin'}"
 		>

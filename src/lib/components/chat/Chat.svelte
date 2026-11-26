@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { imageFeature } from '$lib/utils/nmbImageChoices';
 	import { getMachines } from '$lib/apis/machines';
 	import { resolveToolApprovalMode } from '$lib/utils/toolPermissions';
 	import type { AppLayoutContext, MachineContext } from '$lib/types';
@@ -5166,11 +5167,8 @@
 				// A picked image model rides on the flag; plain true leaves the choice to the server.
 				image_generation:
 					$config?.features?.enable_image_generation &&
-					($user?.role === 'admin' || $user?.permissions?.features?.image_generation) &&
-					imageGenerationEnabled
-						? selectedImageModelId
-							? { model: selectedImageModelId }
-							: true
+					($user?.role === 'admin' || $user?.permissions?.features?.image_generation)
+						? imageFeature($settings)
 						: false,
 				video_generation:
 					$config?.features?.enable_video_generation &&
@@ -5185,7 +5183,7 @@
 					($user?.role === 'admin' || $user?.permissions?.features?.code_interpreter)
 						? codeInterpreterEnabled
 						: false,
-				web_search: webSearchActive
+				web_search: $settings?.nmbWebSearchEnabled !== false && webSearchActive
 			};
 
 		if ($settings?.memory ?? $config?.features?.enable_memories ?? false) {

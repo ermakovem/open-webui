@@ -324,6 +324,10 @@ type OllamaModelDetails = {
 };
 
 type Settings = {
+	nmbImageModel?: string;
+	nmbImageModels?: string[];
+	nmbPinnedImageModels?: string[];
+	nmbWebSearchEnabled?: boolean;
 	pinnedModels?: string[];
 	temporaryChatByDefault?: boolean;
 	detectArtifacts?: boolean;

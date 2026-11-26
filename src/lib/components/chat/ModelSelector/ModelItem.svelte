@@ -6,7 +6,7 @@
 	import { getContext, tick } from 'svelte';
 	import dayjs from '$lib/dayjs';
 
-	import { mobile, settings, user } from '$lib/stores';
+	import { mobile, pinnedModels, settings, user } from '$lib/stores';
 	import { WEBUI_API_BASE_URL, WEBUI_BASE_URL } from '$lib/constants';
 
 	import Tooltip from '$lib/components/common/Tooltip.svelte';
@@ -19,6 +19,7 @@
 	import { toast } from 'svelte-sonner';
 	import Tag from '$lib/components/icons/Tag.svelte';
 	import Label from '$lib/components/icons/Label.svelte';
+	import Star from '$lib/components/icons/Star.svelte';
 
 	const i18n = getContext<typeof import('$lib/i18n').default>('i18n');
 
@@ -33,6 +34,8 @@
 	export let pinModelHandler: (modelId: string) => void = () => {};
 	export let deleteModelHandler: (model: any) => void = () => {};
 	export let selectionOnly = false;
+	export let grouped = false;
+	export let contextLabel = '';
 
 	export let onClick: () => void = () => {};
 	export let onEdit: () => void = () => {};
@@ -54,15 +57,27 @@
 
 	let showMenu = false;
 	$: isSelected = compareEnabled ? selectedValues.includes(item.value) : value === item.value;
+	$: isFavorite = $pinnedModels.includes(item.value);
+	$: favoriteLabel = (isFavorite ? 'Убрать из избранного' : 'Добавить в избранное') + ' · ' + item.label;
+
+	async function toggleFavorite(event: MouseEvent) {
+		const button = event.currentTarget as HTMLButtonElement;
+		const grid = button.closest('[role=grid]');
+		const modelId = item.value;
+		const focused = document.activeElement === button;
+		await pinModelHandler(modelId);
+		await tick();
+		if (focused && !button.isConnected && document.activeElement === document.body) {
+			const next = grid?.querySelector<HTMLElement>(`[data-favorite="${CSS.escape(modelId)}"]`)
+				?? grid?.querySelector<HTMLElement>('[data-subscription]');
+			next?.focus();
+		}
+	}
 </script>
 
-<button
-	id="model-option-{index}"
-	role="option"
-	aria-selected={isSelected}
-	aria-label={$i18n.t('Select {{modelName}} model', { modelName: item.label })}
-	aria-describedby={localizedDescription ? `model-description-${index}` : undefined}
-	class="focus-ring group/item relative flex h-8 w-full cursor-pointer select-none items-center rounded-xl px-2 text-left text-[0.8125rem] font-normal text-base-700 outline-hidden transition-colors duration-75 dark:text-base-100 {($settings?.highContrastMode ??
+<div
+	role={grouped ? 'row' : 'presentation'}
+	class="group/item relative flex h-8 w-full select-none items-center rounded-xl px-2 text-left text-[0.8125rem] font-normal text-base-700 transition-colors duration-75 dark:text-base-100 {($settings?.highContrastMode ??
 	false)
 		? 'hover:bg-base-200 dark:hover:bg-base-800'
 		: 'hover:bg-base-50/40 dark:hover:bg-base-800/40'} {index === selectedModelIdx &&
@@ -75,15 +90,24 @@
 			? 'bg-base-200 dark:bg-base-800'
 			: 'bg-base-50/70 dark:bg-base-800/60'
 		: ''}"
-	data-arrow-selected={index === selectedModelIdx}
-	data-value={item.value}
-	on:focus={() => {
-		selectedModelIdx = index;
-	}}
-	on:click={() => {
-		onClick();
-	}}
+	data-active={index === selectedModelIdx}
+	data-selected={isSelected}
 >
+	<div class="flex h-full min-w-0 flex-1" role={grouped ? 'gridcell' : 'presentation'}>
+	<button
+		type="button"
+		id="model-option-{index}"
+		role={grouped ? 'button' : 'option'}
+		aria-selected={grouped ? undefined : isSelected}
+		aria-pressed={grouped ? isSelected : undefined}
+		aria-label={$i18n.t('Select {{modelName}} model', { modelName: item.label }) + (contextLabel ? ' · контекст ' + contextLabel : '')}
+		aria-describedby={localizedDescription ? `model-description-${index}` : undefined}
+		class="focus-ring flex h-full min-w-0 grow cursor-pointer items-center rounded-lg text-left"
+		data-arrow-selected={index === selectedModelIdx}
+		data-value={item.value}
+		on:focus={() => { selectedModelIdx = index; }}
+		on:click={onClick}
+	>
 	<div class="flex flex-1 flex-col gap-1.5 overflow-hidden">
 		<!-- {#if (item?.model?.tags ?? []).length > 0}
 			<div
@@ -119,12 +143,15 @@
 				</Tooltip>
 			</div>
 
-			<div class="flex min-w-0 items-center">
+			<div class="flex min-w-0 items-center gap-1">
 				<Tooltip content={`${item.label} (${item.value})`} placement="top-start">
 					<div class="line-clamp-1">
 						{item.label}
 					</div>
 				</Tooltip>
+				{#if contextLabel}
+					<span class="shrink-0 text-[0.6875rem] text-base-500 dark:text-base-400" title="Контекст модели">· {contextLabel}</span>
+				{/if}
 			</div>
 
 			<div class="flex shrink-0 items-center gap-1.5">
@@ -251,11 +278,24 @@
 		</div>
 	</div>
 
+	</button>
+	</div>
 	<div
+		role={grouped ? 'gridcell' : 'presentation'}
 		class="ml-auto flex shrink-0 items-center {($settings?.highContrastMode ?? false)
 			? 'gap-0.5'
 			: 'gap-1.5'} pl-2"
 	>
+		{#if grouped}
+			<button type="button" data-favorite={item.value} aria-pressed={isFavorite}
+				aria-label={favoriteLabel} title={favoriteLabel}
+				class="focus-ring flex size-7 items-center justify-center rounded-lg {isFavorite ? 'text-amber-600 dark:text-amber-400' : 'text-base-500 dark:text-base-400'} hover:bg-base-100 dark:hover:bg-base-800"
+				on:focus={() => (selectedModelIdx = index)}
+				on:click={toggleFavorite}
+			>
+				<Star className={isFavorite ? 'size-4 fill-current' : 'size-4'} />
+			</button>
+		{/if}
 		{#if !selectionOnly && $user?.role === 'admin' && item.model.loaded}
 			<Tooltip
 				content={`${$i18n.t('Eject')}`}
@@ -311,10 +351,10 @@
 			</div>
 		{/if}
 	</div>
-</button>
+</div>
 
 <style>
-	[data-arrow-selected='true'][aria-selected='false'] {
+	[data-active='true'][data-selected='false'] {
 		outline: 2px solid var(--color-blue-500);
 		outline-offset: -2px;
 	}

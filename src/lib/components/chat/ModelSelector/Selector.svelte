@@ -14,7 +14,7 @@
 	import ConfirmDialog from '$lib/components/common/ConfirmDialog.svelte';
 	import { flyAndScale } from '$lib/utils/transitions';
 
-	import { getContext, tick } from 'svelte';
+	import { getContext, onMount, tick } from 'svelte';
 
 	import { deleteModel, getOllamaVersion, pullModel } from '$lib/apis/ollama';
 	import { deleteModelById } from '$lib/apis/models';
@@ -31,6 +31,7 @@
 		MODEL_DOWNLOAD_POOL,
 		mobile,
 		settings,
+		pinnedModels,
 		config,
 		showSettings,
 		visibleControls
@@ -54,6 +55,10 @@
 	import TagSelector from '$lib/components/workspace/common/TagSelector.svelte';
 
 	import ModelItem from './ModelItem.svelte';
+	import {
+		formatModelContext, loadSubscriptionMenu, quotaDetails, quotaSummary, subscriptionRows,
+		type PickerRow, type SubscriptionMenu
+	} from './subscriptionMenu';
 	import { getChatContext } from '$lib/components/chat/context';
 
 	const { models, temporary } = getChatContext();
@@ -72,6 +77,7 @@
 	export let searchPlaceholder: string | undefined = undefined;
 	export let selectionOnly = false;
 	export let includeHidden = false;
+	export let subscriptionPicker = false;
 
 	export let items: {
 		label: string;
@@ -89,6 +95,61 @@
 	export let onSetDefault: () => Promise<void> | void = () => {};
 
 	export let pinModelHandler: (modelId: string) => void = () => {};
+
+	let menu: SubscriptionMenu | null = null;
+	let lastMenuRead = 0;
+	let toggledSections = new Set<string>();
+
+	async function refreshMenu() {
+		if (!subscriptionPicker || Date.now() - lastMenuRead < 15000) return;
+		try {
+			menu = await loadSubscriptionMenu();
+			lastMenuRead = Date.now();
+		} catch {
+			// The regular WebUI picker also works while the portal is unreachable.
+			menu = null;
+		}
+	}
+	onMount(() => { void refreshMenu(); });
+	$: menuModels = new Map(menu?.models.map((model) => [model.id, model]));
+
+	function toggleSection(key: string, index: number) {
+		if (sanitizedSearchValue) return;
+		if (toggledSections.has(key)) toggledSections.delete(key);
+		else toggledSections.add(key);
+		toggledSections = new Set(toggledSections);
+		selectedModelIdx = index;
+	}
+
+	function navigateGrid(event: KeyboardEvent) {
+		const button = event.target as HTMLElement;
+		if (!menu || !button.matches('[data-value], [data-favorite], [data-subscription]')) return;
+		const row = rows[selectedModelIdx];
+		if (!row) return;
+		let destination = selectedModelIdx;
+		switch (event.key) {
+			case 'ArrowUp': destination--; break;
+			case 'ArrowDown': destination++; break;
+			case 'Home': destination = 0; break;
+			case 'End': destination = rows.length - 1; break;
+			case 'ArrowLeft':
+			case 'ArrowRight':
+				if (row.section) {
+					if (row.section.expanded !== (event.key === 'ArrowRight')) {
+						toggleSection(row.section.id, selectedModelIdx);
+					}
+				} else {
+					const control = event.key === 'ArrowRight' ? '[data-favorite]' : '[data-value]';
+					button.closest('[role=row]')?.querySelector<HTMLElement>(control)?.focus();
+				}
+				event.preventDefault();
+				return;
+			default: return;
+		}
+		event.preventDefault();
+		destination = Math.min(rows.length - 1, Math.max(0, destination));
+		listContainer?.querySelector(`#model-option-${destination}`)?.focus();
+	}
 
 	let show = false;
 	let triggerElement: HTMLElement | null = null;
@@ -154,6 +215,7 @@
 	const toggleOpen = async () => {
 		show = !show;
 		if (show) {
+			void refreshMenu();
 			searchValue = '';
 			listScrollTop = 0;
 			if (!selectionOnly) {
@@ -259,6 +321,8 @@
 		items.map((item) => {
 			const _item = {
 				...item,
+				menuName: menuModels.get(item.value)?.name,
+				nativeId: item.value.slice(item.value.indexOf('/') + 1),
 				modelName: resolveLocalizedModelName(item.model, $i18n.language),
 				tags: (item.model?.tags ?? []).map((tag) => tag.name).join(' '),
 				desc: resolveLocalizedModelDescription(item.model, $i18n.language)
@@ -266,7 +330,8 @@
 			return _item;
 		}),
 		{
-			keys: ['value', 'tags', 'modelName'],
+			keys: ['value', 'nativeId', 'tags', 'modelName', 'menuName'],
+			ignoreLocation: subscriptionPicker,
 			threshold: 0.4
 		}
 	);
@@ -317,6 +382,10 @@
 	).filter((item) => includeHidden || !(item.model?.info?.meta?.hidden ?? false));
 
 	$: sanitizedSearchValue = searchValue.trim();
+	let rows: PickerRow<(typeof items)[number]>[] = [];
+	$: rows = menu
+		? subscriptionRows(filteredItems, menu, $pinnedModels, toggledSections, !!sanitizedSearchValue)
+		: filteredItems.map((item) => ({ key: item.value, item }));
 	$: downloadTargets =
 		!selectionOnly && sanitizedSearchValue && $user?.role === 'admin'
 			? [
@@ -358,7 +427,7 @@
 	$: if (
 		selectedTag !== undefined ||
 		selectedConnectionType !== undefined ||
-		searchValue !== undefined
+		searchValue !== undefined || menu !== undefined
 	) {
 		resetView();
 	}
@@ -406,18 +475,18 @@
 	const resetView = async () => {
 		await tick();
 
-		const selectedInFiltered = filteredItems.findIndex((item) => item.value === primaryValue);
+		const selectedInFiltered = rows.findIndex((row) => row.item?.value === primaryValue);
 
 		if (selectedInFiltered >= 0) {
 			// The selected model is visible in the current filter
 			selectedModelIdx = selectedInFiltered;
 		} else {
 			// The selected model is not visible, default to first item in filtered list
-			selectedModelIdx = 0;
+			selectedModelIdx = sanitizedSearchValue ? Math.max(0, rows.findIndex((row) => row.item)) : 0;
 		}
 
 		// Set the virtual scroll position so the selected item is rendered and centered
-		const targetScrollTop = Math.max(0, selectedModelIdx * ITEM_HEIGHT - 128 + ITEM_HEIGHT / 2);
+		const targetScrollTop = menu ? 0 : Math.max(0, selectedModelIdx * ITEM_HEIGHT - 128 + ITEM_HEIGHT / 2);
 		listScrollTop = targetScrollTop;
 
 		await tick();
@@ -427,7 +496,7 @@
 		}
 
 		await tick();
-		const item = document.querySelector(`[data-arrow-selected="true"]`);
+		const item = contentElement?.querySelector('[data-arrow-selected="true"]');
 		item?.scrollIntoView({ block: 'center', inline: 'nearest', behavior: 'instant' });
 	};
 
@@ -870,9 +939,9 @@
 		};
 	};
 
-	$: visibleStart = Math.max(0, Math.floor(listScrollTop / ITEM_HEIGHT) - OVERSCAN);
-	$: visibleEnd = Math.min(
-		filteredItems.length,
+	$: visibleStart = menu ? 0 : Math.max(0, Math.floor(listScrollTop / ITEM_HEIGHT) - OVERSCAN);
+	$: visibleEnd = menu ? rows.length : Math.min(
+		rows.length,
 		Math.ceil((listScrollTop + listViewportHeight) / ITEM_HEIGHT) + OVERSCAN
 	);
 </script>
@@ -899,7 +968,7 @@
 		aria-label={selectedModel
 			? $i18n.t('Selected model: {{modelName}}', { modelName: triggerLabel })
 			: (placeholder ?? $i18n.t('Select a model'))}
-		aria-haspopup="listbox"
+		aria-haspopup={menu ? 'grid' : 'listbox'}
 		aria-expanded={show}
 		id="model-selector-{id}-button"
 		type="button"
@@ -945,31 +1014,39 @@
 								aria-label={$i18n.t('Search In Models')}
 								role="combobox"
 								aria-autocomplete="list"
-								aria-expanded={filteredItems.length + downloadTargets.length > 0}
+								aria-haspopup={menu ? 'grid' : 'listbox'}
+								aria-expanded={rows.length + downloadTargets.length > 0}
 								aria-controls="model-selector-list"
-								aria-activedescendant={filteredItems.length + downloadTargets.length > 0 &&
-								(selectedModelIdx >= filteredItems.length ||
+								aria-activedescendant={selectedModelIdx < rows.length + downloadTargets.length &&
+								(selectedModelIdx >= rows.length ||
 									(selectedModelIdx >= visibleStart && selectedModelIdx < visibleEnd))
 									? `model-option-${selectedModelIdx}`
 									: undefined}
-								on:keydown={(e) => {
-									if (e.code === 'Enter') {
-										if (selectedModelIdx >= filteredItems.length) {
-											const target = downloadTargets[selectedModelIdx - filteredItems.length];
+								on:keydown={async (e) => {
+									if (e.isComposing) return;
+									if (e.key === 'Enter') {
+										e.preventDefault();
+										const row = rows[selectedModelIdx];
+										if (selectedModelIdx >= rows.length) {
+											const target = downloadTargets[selectedModelIdx - rows.length];
 											if (target && !target.download) {
 												downloadModelHandler(target);
 											}
-										} else if (filteredItems[selectedModelIdx]) {
-											selectItem(filteredItems[selectedModelIdx], selectedModelIdx);
+										} else if (row.section) {
+											toggleSection(row.section.id, selectedModelIdx);
+										} else {
+											selectItem(row.item, selectedModelIdx);
 										}
 										return; // dont need to scroll on selection
 									} else if (e.code === 'ArrowDown') {
+										e.preventDefault();
 										e.stopPropagation();
 										selectedModelIdx = Math.min(
 											selectedModelIdx + 1,
-											Math.max(filteredItems.length - 1 + downloadTargets.length, 0)
+											Math.max(rows.length - 1 + downloadTargets.length, 0)
 										);
 									} else if (e.code === 'ArrowUp') {
+										e.preventDefault();
 										e.stopPropagation();
 										selectedModelIdx = Math.max(selectedModelIdx - 1, 0);
 									} else {
@@ -978,8 +1055,8 @@
 									}
 
 									if (
-										listContainer &&
-										selectedModelIdx < filteredItems.length &&
+										!menu && listContainer &&
+										selectedModelIdx < rows.length &&
 										(selectedModelIdx < visibleStart || selectedModelIdx >= visibleEnd)
 									) {
 										listScrollTop = Math.max(
@@ -989,7 +1066,8 @@
 										listContainer.scrollTop = listScrollTop;
 									}
 
-									const item = document.querySelector(`[data-arrow-selected="true"]`);
+									await tick();
+									const item = contentElement?.querySelector('[data-arrow-selected="true"]');
 									item?.scrollIntoView({
 										block: 'center',
 										inline: 'nearest',
@@ -1095,21 +1173,55 @@
 								class="min-h-0 flex-1 overflow-y-auto"
 								style="max-height: 18rem;"
 								id="model-selector-list"
-								role="listbox"
+								role={menu ? 'grid' : 'listbox'}
 								aria-label={$i18n.t('Available models')}
 								bind:this={listContainer}
 								use:trackListViewport
+								on:keydown={navigateGrid}
 								on:scroll={() => {
 									listScrollTop = listContainer.scrollTop;
 								}}
 							>
 								<div style="height: {visibleStart * ITEM_HEIGHT}px;" />
-								{#each filteredItems.slice(visibleStart, visibleEnd) as item, i (item.value)}
+								{#each rows.slice(visibleStart, visibleEnd) as row, i (row.key)}
 									{@const index = visibleStart + i}
+									{#if row.section}
+										{@const section = row.section}
+										<div role="row">
+											<div role="gridcell" aria-colspan="2">
+												<button
+													type="button"
+													id="model-option-{index}"
+													data-subscription={section.id}
+													data-arrow-selected={index === selectedModelIdx}
+													aria-expanded={section.expanded}
+													aria-disabled={!!sanitizedSearchValue}
+													title={section.windows ? quotaDetails(section.windows) : undefined}
+													class="focus-ring flex min-h-8 w-full items-center gap-1.5 rounded-lg px-2 text-left text-xs font-semibold hover:bg-base-50 dark:hover:bg-base-800 {index === selectedModelIdx ? 'bg-base-100 dark:bg-base-800' : ''}"
+													on:focus={() => (selectedModelIdx = index)}
+													on:click={() => toggleSection(section.id, index)}
+												>
+													<span class={section.expanded ? '' : '-rotate-90'}>
+														<ChevronDown className="size-3" />
+													</span>
+													<span>{section.label}</span>
+													{#if section.windows}
+														<span class="ml-auto text-right text-[0.6875rem] font-normal tabular-nums text-base-600 dark:text-base-300">
+															<span class="sr-only">Остаток лимита </span>{quotaSummary(section.windows)}
+														</span>
+													{/if}
+												</button>
+											</div>
+										</div>
+									{:else}
+									{@const item = row.item}
+									{@const meta = menuModels.get(item.value)}
 									<ModelItem
 										onComment={(request) => (comments = request)}
 										bind:selectedModelIdx
-										{item}
+										item={meta ? { ...item, label: meta.name } : item}
+										grouped={!!menu}
+										contextLabel={formatModelContext(meta?.context_tokens)}
 										{index}
 										value={primaryValue}
 										{pinModelHandler}
@@ -1125,8 +1237,9 @@
 											show = false;
 										}}
 									/>
+									{/if}
 								{/each}
-								<div style="height: {(filteredItems.length - visibleEnd) * ITEM_HEIGHT}px;" />
+								<div style="height: {(rows.length - visibleEnd) * ITEM_HEIGHT}px;" />
 							</div>
 						{/if}
 
@@ -1139,12 +1252,12 @@
 									placement="top-start"
 								>
 									<div
-										id="model-option-{filteredItems.length + targetIndex}"
+										id="model-option-{rows.length + targetIndex}"
 										role="option"
-										aria-selected={selectedModelIdx === filteredItems.length + targetIndex}
-										data-arrow-selected={selectedModelIdx === filteredItems.length + targetIndex}
+										aria-selected={selectedModelIdx === rows.length + targetIndex}
+										data-arrow-selected={selectedModelIdx === rows.length + targetIndex}
 										class="flex h-8 w-full select-none items-center gap-2 rounded-xl px-2 text-left text-[0.8125rem] font-normal text-base-700 outline-hidden transition-colors duration-75 dark:text-base-100 {selectedModelIdx ===
-										filteredItems.length + targetIndex
+										rows.length + targetIndex
 											? ($settings?.highContrastMode ?? false)
 												? 'bg-base-200 dark:bg-base-800'
 												: 'bg-base-50/70 dark:bg-base-800/60'
@@ -1192,15 +1305,15 @@
 								<Tooltip content={target.actionLabel} placement="top-start">
 									<button
 										type="button"
-										id="model-option-{filteredItems.length + targetIndex}"
+										id="model-option-{rows.length + targetIndex}"
 										role="option"
-										aria-selected={selectedModelIdx === filteredItems.length + targetIndex}
-										data-arrow-selected={selectedModelIdx === filteredItems.length + targetIndex}
+										aria-selected={selectedModelIdx === rows.length + targetIndex}
+										data-arrow-selected={selectedModelIdx === rows.length + targetIndex}
 										class="focus-ring flex h-8 w-full cursor-pointer select-none items-center gap-2 rounded-xl px-2 text-left text-[0.8125rem] font-normal text-base-700 outline-hidden transition-colors duration-75 dark:text-base-100 {($settings?.highContrastMode ??
 										false)
 											? 'hover:bg-base-200 dark:hover:bg-base-800'
 											: 'hover:bg-base-50/40 dark:hover:bg-base-800/40'} {selectedModelIdx ===
-										filteredItems.length + targetIndex
+										rows.length + targetIndex
 											? ($settings?.highContrastMode ?? false)
 												? 'bg-base-200 dark:bg-base-800'
 												: 'bg-base-50/70 dark:bg-base-800/60'

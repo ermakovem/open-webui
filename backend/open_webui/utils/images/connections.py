@@ -8,6 +8,7 @@ AUTOMATIC1111) with the image models it exposes. Users pick a model by its refer
 from __future__ import annotations
 
 import logging
+import re
 import uuid
 from typing import Any, Literal
 
@@ -190,7 +191,7 @@ async def get_openai_connection_models(request: Request, connection: dict, user:
         res = await r.json(content_type=None)
 
     models = [
-        {'id': model['id'], 'name': model['id']}
+        {'id': model['id'], 'name': model.get('name') or model['id']}
         for model in (res.get('data') or [])
         if isinstance(model, dict) and model.get('id')
     ]
@@ -243,6 +244,8 @@ async def get_synced_image_models(request: Request, connection: dict, user: User
     appear on their own. Servers that do not label image models (plain OpenAI, Azure) offer the default model."""
     try:
         models = await get_openai_connection_models(request, connection, user)
+        if not models and (connection.get('config') or {}).get('headers', {}).get('X-NMB-Catalog') == 'media':
+            return []
     except Exception as e:
         log.warning('Could not list image models from %s: %s', connection.get('url'), e)
         return []
@@ -283,7 +286,7 @@ async def get_image_models(request: Request, user: UserModel, *, bypass_access: 
             models.append(
                 {
                     'id': get_image_model_ref(connection['id'], model_id),
-                    'name': model_id or connection.get('name') or connection['id'],
+                    'name': entry.get('name') or model_id or connection.get('name') or connection['id'],
                     'model': model_id,
                     'connection_id': connection['id'],
                     'connection_name': connection.get('name') or connection['id'],
@@ -309,6 +312,15 @@ def get_requested_model(metadata: dict | None, feature: str, meta_key: str) -> s
         return requested['model']
     model = metadata.get('model') or {}
     return ((model.get('info') or {}).get('meta') or {}).get(meta_key) or None
+
+
+def get_image_model_label(model: str | None) -> str:
+    """Display a native model slug without its connection or subscription identifier."""
+    if not model:
+        return 'Модель по умолчанию'
+    slug = model.partition(':')[2] if ':' in model else model
+    slug = slug.rsplit('/', 1)[-1]
+    return slug if re.fullmatch(r'[\w.-]{1,128}', slug, flags=re.ASCII) else 'Выбранная модель'
 
 
 def get_requested_image_model(metadata: dict | None) -> str | None:

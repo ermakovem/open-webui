@@ -447,7 +447,7 @@ def merge_streamed_reasoning_details(target: list, details) -> None:
                 existing[key] = value
 
 
-CITATION_TOOL_NAMES = ('fetch_url', 'view_file', 'view_knowledge_file', 'query_knowledge_files', 'query_chat_files')
+CITATION_TOOL_NAMES = ('search_web', 'fetch_url', 'view_file', 'view_knowledge_file', 'query_knowledge_files', 'query_chat_files')
 
 
 def get_citation_source_from_tool_result(
@@ -497,6 +497,16 @@ def get_citation_source_from_tool_result(
                         }
                     ],
                 }
+            ]
+
+        elif tool_name == 'search_web' and isinstance(tool_result, list):
+            return [
+                {
+                    'source': {'id': hit['link'], 'name': hit.get('title') or hit['link']},
+                    'document': [hit.get('snippet') or ''],
+                    'metadata': [{'source': hit['link'], 'url': hit['link'], 'name': hit.get('title') or hit['link']}],
+                }
+                for hit in tool_result if isinstance(hit, dict) and hit.get('link')
             ]
 
         elif tool_name == 'fetch_url':
@@ -1517,7 +1527,24 @@ def add_file_context(messages: list) -> list:
     return messages
 
 
-async def chat_image_generation_handler(request: Request, form_data: dict, extra_params: dict, user):
+def attached_photo_urls(messages):
+    message = get_last_user_message_item(messages) or {}
+    parts = message.get('content')
+    if not isinstance(parts, list):
+        return []
+    urls = []
+    for part in parts:
+        if not isinstance(part, dict) or part.get('type') not in ('image_url', 'input_image'):
+            continue
+        url = part.get('image_url')
+        if isinstance(url, dict):
+            url = url.get('url')
+        if isinstance(url, str) and url.startswith(('data:image/', '/api/v1/files/')):
+            urls.append(url)
+    return urls
+
+
+async def chat_image_generation_handler(request: Request, form_data: dict, extra_params: dict, user, source_images=None, source_prompt=None):
     metadata = extra_params.get('__metadata__', {})
     chat_id = metadata.get('chat_id', None)
     __event_emitter__ = extra_params.get('__event_emitter__', None)
@@ -1532,7 +1559,7 @@ async def chat_image_generation_handler(request: Request, form_data: dict, extra
     }
     machine_metadata = {**metadata, 'machine_id': machine_id_of(form_data)}
 
-    if not is_saved_chat_id(chat_id):
+    if source_images or not is_saved_chat_id(chat_id):
         message_list = form_data.get('messages', [])
     else:
         chat = await Chats.get_accessible_chat_by_id(chat_id, user, permission='write')
@@ -1541,19 +1568,13 @@ async def chat_image_generation_handler(request: Request, form_data: dict, extra
         message_id = metadata.get('user_message_id') or chat.chat.get('history', {}).get('currentId')
         message_list = get_message_list(messages_map, message_id)
 
-    user_message = get_last_user_message(message_list)
+    user_message = source_prompt if source_prompt is not None else get_last_user_message(message_list)
 
     prompt = user_message
-    message_images = get_images_from_messages(message_list)
-
-    # Limit to first 2 sets of images
-    # We may want to change this in the future to allow more images
-    input_images = []
-    for idx, images in enumerate(message_images):
-        if idx >= 2:
-            break
-        for image in images:
-            input_images.append(image)
+    input_images = source_images
+    if input_images is None:
+        recent_sets = get_images_from_messages(message_list)[:2]
+        input_images = [image for images in recent_sets for image in images]
 
     # Called directly, bypassing the /images routes that enforce these switches.
     editing = len(input_images) > 0 and await Config.get('images.edit.enable')
@@ -2291,6 +2312,13 @@ async def process_chat_payload(request, form_data, user, metadata, model):
         if message.get('role') == 'assistant' and isinstance(output, list):
             message['output'] = strip_tool_images(message['output'], model)
 
+    # Capture the user's text before attachment manifests are inserted as their own text parts.
+    photo_content = (get_last_user_message_item(form_data.get('messages', [])) or {}).get('content')
+    photo_edit_prompt = (
+        '\n'.join(p['text'] for p in photo_content if isinstance(p, dict)
+                  and p.get('type') in ('text', 'input_text') and isinstance(p.get('text'), str))
+        if isinstance(photo_content, list) else photo_content
+    )
     form_data['messages'] = process_messages_with_output(
         form_data.get('messages', []),
         reasoning_format=get_reasoning_format(model),
@@ -2469,9 +2497,13 @@ async def process_chat_payload(request, form_data, user, metadata, model):
                 'features.image_generation',
                 await Config.get('user.permissions'),
             ):
-                # Skip forced image generation when native FC is enabled - model can use generate_image tool
+                # Bind originals for a tool call on this turn. The model can still answer questions about a photo.
+                photos = attached_photo_urls(form_data['messages'])
+                if photos:
+                    request.state.nmb_photo_edit = (photos, photo_edit_prompt)
                 if metadata.get('params', {}).get('function_calling') == 'legacy':
-                    form_data = await chat_image_generation_handler(request, form_data, extra_params, user)
+                    # A profile preference enables an available tool, never forces a media job.
+                    features = {**features, 'image_generation': False}
 
         if 'code_interpreter' in features and features['code_interpreter']:
             engine = await Config.get('code_interpreter.engine', 'pyodide')
