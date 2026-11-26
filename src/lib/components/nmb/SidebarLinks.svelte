@@ -14,7 +14,8 @@
 			return;
 		event.preventDefault();
 		onNavigate();
-		void goto(href);
+		if (current) window.dispatchEvent(new Event('nmb:refresh-subscriptions'));
+		else void goto(href);
 	}
 </script>
 

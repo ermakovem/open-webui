@@ -65,18 +65,34 @@
 		const restored = (event: PageTransitionEvent) => {
 			if (event.persisted) void home();
 		};
-		const visible = () => {
-			if (!document.hidden && view?.section === 'device') status();
+		let away = document.hidden || !document.hasFocus();
+		const refresh = () => {
+			if (view?.section === 'device') status();
+			else if (!view || view.section === 'subscriptions') void run('/subscriptions');
+		};
+		const onBlur = () => { away = true; };
+		const onReturn = () => {
+			if (document.hidden) away = true;
+			else if (away) {
+				away = false;
+				refresh();
+			}
 		};
 		window.addEventListener('beforeunload', beforeUnload);
 		window.addEventListener('pagehide', forget);
 		window.addEventListener('pageshow', restored);
-		document.addEventListener('visibilitychange', visible);
+		document.addEventListener('visibilitychange', onReturn);
+		window.addEventListener('blur', onBlur);
+		window.addEventListener('focus', onReturn);
+		window.addEventListener('nmb:refresh-subscriptions', refresh);
 		return () => {
 			window.removeEventListener('beforeunload', beforeUnload);
 			window.removeEventListener('pagehide', forget);
 			window.removeEventListener('pageshow', restored);
-			document.removeEventListener('visibilitychange', visible);
+			document.removeEventListener('visibilitychange', onReturn);
+			window.removeEventListener('blur', onBlur);
+			window.removeEventListener('focus', onReturn);
+			window.removeEventListener('nmb:refresh-subscriptions', refresh);
 			forget();
 		};
 	});
