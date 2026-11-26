@@ -1,5 +1,9 @@
 <script lang="ts">
-	import Portal from '$lib/components/nmb/Portal.svelte';
-</script>
+	import { onMount } from 'svelte';
+	import { goto } from '$app/navigation';
 
-<Portal destination="account" />
+	onMount(() => {
+		const section = window.location.hash === '#limits' ? '#limits' : '#api';
+		void goto('/nmb/subscriptions' + section, { replaceState: true });
+	});
+</script>

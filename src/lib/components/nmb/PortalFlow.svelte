@@ -1,15 +1,13 @@
 <script lang="ts">
-	import type { Destination, PortalView, Post } from './portal';
-	export let view: Exclude<PortalView, { section: Destination }>;
+	import type { PortalView, Post } from './portal';
+	export let view: Exclude<PortalView, { section: 'subscriptions' }>;
 	export let post: Post;
 	export let busy: boolean;
 	export let deviceMessage: string;
 	export let returnHome: () => void;
 	export let returnModels: (() => void) | null;
-	export let destination: Destination;
 	let redirect = '';
 	$: if (view.section !== 'oauth') redirect = '';
-	$: homeLabel = destination === 'account' ? 'Вернуться в кабинет' : 'Вернуться к подпискам';
 
 	function submitCallback() {
 		if (view.section === 'oauth' && redirect.trim()) {
@@ -121,7 +119,7 @@
 		{:else}
 			{#if !view.needs_prefix}<p>У подключения пока нет зарегистрированных моделей.</p>{/if}
 		{/each}
-		<button class="nmb-button mt-4" disabled={busy} on:click={returnHome}>{homeLabel}</button>
+		<button class="nmb-button mt-4" disabled={busy} on:click={returnHome}>Вернуться к подпискам</button>
 	</section>
 {:else if view.section === 'confirm'}
 	<section>
@@ -150,6 +148,6 @@
 		{#if returnModels}<button class="nmb-primary" disabled={busy} on:click={returnModels}
 				>Вернуться к моделям</button
 			>{/if}
-		<button class="nmb-button" disabled={busy} on:click={returnHome}>{homeLabel}</button>
+		<button class="nmb-button" disabled={busy} on:click={returnHome}>Вернуться к подпискам</button>
 	</div>
 {/if}

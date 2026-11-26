@@ -1,7 +1,6 @@
 <script lang="ts">
-	import QuotaList from './QuotaList.svelte';
-	import type { Account, Post } from './portal';
-	export let view: Account;
+	import type { Subscriptions, Post } from './portal';
+	export let view: Subscriptions;
 	export let post: Post;
 	export let busy: boolean;
 	let keyAction: 'issue' | 'revoke' | null = null;
@@ -12,16 +11,15 @@ openai = OpenAI()
 anthropic = Anthropic()
 messages = [{"role": "user", "content": "Привет!"}]
 
-openai_model = next((m.id for m in openai.models.list()), None)
-if openai_model:
-    print(openai.chat.completions.create(model=openai_model, messages=messages))
-
-anthropic_model = next((m.id for m in anthropic.models.list()), None)
-if anthropic_model:
-    print(anthropic.messages.create(model=anthropic_model, max_tokens=64, messages=messages))`;
+print([m.id for m in openai.models.list()])
+print([m.id for m in anthropic.models.list()])
+model = input("ID текстовой модели: ").strip()
+if model:
+    print(openai.chat.completions.create(model=model, messages=messages))
+    print(anthropic.messages.create(model=model, max_tokens=64, messages=messages))`;
 </script>
 
-<section id="api">
+<section>
 	<h2>Ваш API-ключ</h2>
 	<div class="nmb-card">
 		<p>
@@ -43,7 +41,7 @@ if anthropic_model:
 						? 'Приложения с этим ключом потеряют доступ к API.'
 						: view.key_exists
 							? 'Предыдущий ключ сразу перестанет работать. Новый можно скопировать один раз.'
-							: 'Новый ключ появится один раз. Сохраните его перед выходом из кабинета.'}
+							: 'Новый ключ появится один раз. Сохраните его перед выходом из раздела.'}
 				</p>
 				<div class="nmb-actions">
 					<button class="nmb-button" disabled={busy} on:click={() => (keyAction = null)}
@@ -80,6 +78,7 @@ if anthropic_model:
 
 <section>
 	<h2>Подключение SDK</h2>
+	<p>Оба API показывают модели со звездой в вашем профиле. Когда избранное пусто, видны все опубликованные модели.</p>
 	<p>Задайте выданный ключ в <code>OPENAI_API_KEY</code> и <code>ANTHROPIC_API_KEY</code>.</p>
 	<pre
 		class="nmb-code">{`OPENAI_BASE_URL=${window.location.origin}/openai/v1\nANTHROPIC_BASE_URL=${window.location.origin}/anthropic`}</pre>
@@ -87,11 +86,6 @@ if anthropic_model:
 		<summary class="cursor-pointer py-1 font-medium">Пример на Python</summary>
 		<pre class="nmb-code">{example}</pre>
 	</details>
-</section>
-
-<section id="limits">
-	<h2>Лимиты подписок</h2>
-	<QuotaList subscriptions={view.subscriptions} providers={view.providers} notice={view.notice} />
 </section>
 
 <section>

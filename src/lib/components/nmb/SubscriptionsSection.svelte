@@ -22,7 +22,7 @@
 	</div>
 </section>
 
-<section>
+<section id="limits">
 	<h2>Общие подключения и лимиты</h2>
 	<QuotaList
 		subscriptions={view.subscriptions}
@@ -61,8 +61,8 @@
 	</QuotaList>
 </section>
 
-<section>
-	<h2>Журнал изменений</h2>
+<details class="mt-6">
+	<summary class="cursor-pointer py-1 font-medium">Журнал изменений</summary>
 	{#if view.journal.length}
 		<div class="nmb-table">
 			<table>
@@ -83,4 +83,4 @@
 			</table>
 		</div>
 	{:else}<p class="nmb-muted">Изменений пока нет.</p>{/if}
-</section>
+</details>

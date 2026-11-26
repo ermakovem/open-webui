@@ -11,13 +11,12 @@
 	import {
 		PortalError,
 		requestPortal,
-		type Destination,
 		type Fields,
 		type PortalView
 	} from './portal';
 	import './portal.css';
 
-	export let destination: Destination;
+	let personalOpen = false;
 	let view: PortalView | null = null;
 	let error = '';
 	let busy = false;
@@ -27,7 +26,7 @@
 	let inFlight: AbortController | null = null;
 	let titleElement: HTMLHeadingElement;
 	let scrollArea: HTMLElement;
-	$: title = destination === 'account' ? 'Личный кабинет' : 'Подписки';
+	const title = 'Подписки';
 
 	function forget() {
 		clearTimeout(timer);
@@ -50,7 +49,13 @@
 	});
 
 	onMount(() => {
-		void home();
+		const anchor = window.location.hash;
+		personalOpen = anchor === '#api';
+		void home().then(() => {
+			if (anchor === '#api' || anchor === '#limits') {
+				document.getElementById(anchor.slice(1))?.scrollIntoView({ block: 'start' });
+			}
+		});
 		const beforeUnload = (event: BeforeUnloadEvent) => {
 			if (view?.section === 'issued') {
 				event.preventDefault();
@@ -78,7 +83,7 @@
 
 	function home() {
 		forget();
-		return run('/' + destination);
+		return run('/subscriptions');
 	}
 
 	function openModels(name: string) {
@@ -194,7 +199,7 @@
 				>
 					{title}
 				</h1>
-				{#if view?.section === destination}<p class="nmb-muted mt-1 break-all">
+				{#if view?.section === 'subscriptions'}<p class="nmb-muted mt-1 break-all">
 						{$user?.name || view.owner}
 					</p>{/if}
 			</header>
@@ -206,21 +211,25 @@
 					{/if}
 				</div>
 			{/if}
-			{#if view?.section === 'account' || view?.section === 'subscriptions'}
+			{#if view?.section === 'subscriptions'}
 				{#if view.notice}
 					<div class="nmb-notice mb-4">
 						<p role="status">{view.notice}</p>
 						<button class="nmb-button mt-2" disabled={busy} on:click={home}>Обновить раздел</button>
 					</div>
 				{/if}
-				{#if view.section === 'account'}<AccountSection {view} {post} {busy} />
-				{:else}<SubscriptionsSection {view} {post} {openModels} {busy} />{/if}
+				<details id="api" class="nmb-card mb-6" bind:open={personalOpen}>
+					<summary class="cursor-pointer font-medium">Мой API-ключ и расход</summary>
+					<div class="mt-4">
+						<AccountSection {view} {post} {busy} />
+					</div>
+				</details>
+				<SubscriptionsSection {view} {post} {openModels} {busy} />
 			{:else if view}
 				<PortalFlow
 					{view}
 					{post}
 					{busy}
-					{destination}
 					{deviceMessage}
 					returnHome={home}
 					returnModels={modelTarget ? () => openModels(modelTarget) : null}

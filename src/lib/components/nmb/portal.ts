@@ -1,4 +1,3 @@
-export type Destination = 'subscriptions' | 'account';
 export type Fields = Record<string, string>;
 export interface Subscription {
 	name: string;
@@ -18,21 +17,15 @@ interface Common {
 	origin: string;
 	providers: Record<string, string>;
 }
-export interface Account extends Common {
-	section: 'account';
-	notice: string;
-	subscriptions: Subscription[];
-	key_exists: boolean;
-	activity: { day: string; model: string; outcome: string; total: number }[];
-}
 export interface Subscriptions extends Common {
 	section: 'subscriptions';
 	notice: string;
 	subscriptions: Subscription[];
+	key_exists: boolean;
+	activity: { day: string; model: string; outcome: string; total: number }[];
 	journal: { time: string; owner: string; action: string; target: string; result: string }[];
 }
 export type PortalView =
-	| Account
 	| Subscriptions
 	| (Common &
 			(
@@ -53,7 +46,6 @@ export type PortalView =
 export type Post = (path: string, fields?: Fields) => void;
 
 const sections = new Set<PortalView['section']>([
-	'account',
 	'subscriptions',
 	'issued',
 	'oauth',
