@@ -32,6 +32,7 @@
 		config,
 		type Model,
 		models as _models,
+		pinnedModels,
 		tags as allTags,
 		settings,
 		showSidebar,
@@ -414,7 +415,10 @@
 			!selectedModels?.some((modelId) => modelId) &&
 			!modelSearchParam
 		) {
-			const fallbackModels = normalizeSelectedModels(selectedModels);
+			const firstPin = $pinnedModels.find((id) =>
+				$models.some((model) => model.id === id && !model.info?.meta?.hidden)
+			);
+			const fallbackModels = normalizeSelectedModels(firstPin ? [firstPin] : selectedModels);
 			if (!equal(fallbackModels, selectedModels)) {
 				selectedModels = fallbackModels;
 				if (!loading && !modelDefaults) setDefaults();
@@ -3228,7 +3232,11 @@
 				}
 				selectedModels = normalizeSelectedModels(destinationFolder.data?.model_ids ?? []);
 			} else {
-				if (sessionStorage.selectedModels) {
+				const firstPin = $pinnedModels.find((id) => availableModels.includes(id));
+				if (firstPin) {
+					selectedModels = [firstPin];
+					sessionStorage.removeItem('selectedModels');
+				} else if (sessionStorage.selectedModels) {
 					// Set from session storage (temporary selection)
 					selectedModels = JSON.parse(sessionStorage.selectedModels);
 					sessionStorage.removeItem('selectedModels');
