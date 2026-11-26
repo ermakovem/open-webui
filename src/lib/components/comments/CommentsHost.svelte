@@ -3,7 +3,6 @@
 	import { page } from '$app/stores';
 	import { config, user, showTabs } from '$lib/stores';
 	import Annotation from '$lib/components/icons/Annotation.svelte';
-	import CommentHighlights from './CommentHighlights.svelte';
 	import { selectedComment, commentSelectionDraft } from './anchors';
 	import { toast } from 'svelte-sonner';
 	import { positionSelectionToolbar } from '$lib/utils/selectionToolbar';
@@ -81,7 +80,9 @@
 	}}
 />
 {#if commentsAllowed}
-	{#key account}<CommentHighlights />{/key}
+	{#await import('./CommentHighlights.svelte') then { default: CommentHighlights }}
+		{#key account}<CommentHighlights />{/key}
+	{/await}
 	{#if selection && !selection.options.toolbar_id}
 		<button
 			bind:this={selectionButton}
