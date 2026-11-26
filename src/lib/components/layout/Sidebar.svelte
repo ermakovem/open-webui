@@ -107,6 +107,7 @@
 	import ChannelModal from './Sidebar/ChannelModal.svelte';
 	import ChannelItem from './Sidebar/ChannelItem.svelte';
 	import SearchModal from './SearchModal.svelte';
+	import NmbSidebarLinks from '$lib/components/nmb/SidebarLinks.svelte';
 	import FolderModal from './Sidebar/Folders/FolderModal.svelte';
 	import PinnedNoteList from './Sidebar/PinnedNoteList.svelte';
 	import CalendarIcon from './Sidebar/icons/Calendar.svelte';
@@ -1290,6 +1291,8 @@
 						</Tooltip>
 					</div>
 
+					<NmbSidebarLinks collapsed onNavigate={itemClickHandler} />
+
 					{#each pinnedItems as itemId (itemId)}
 						{@const meta = getMenuItemMeta(itemId)}
 						{#if meta && isMenuItemVisible(itemId)}
@@ -1532,6 +1535,8 @@
 								<HotkeyHint name="search" className=" hover-reveal " />
 							</button>
 						</div>
+
+						<NmbSidebarLinks onNavigate={itemClickHandler} />
 
 						<div id="pinned-menu-items-list">
 							{#each pinnedItems as itemId (itemId)}
