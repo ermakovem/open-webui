@@ -662,7 +662,7 @@
 		// selectNextTemplate(state, dispatch);
 	};
 
-	export const setText = (text: string) => {
+	export const setText = (text: string, focusAfter = true) => {
 		if (!editor || !editor.view) return;
 
 		if (text === '') {
@@ -711,7 +711,7 @@
 		selectNextTemplate(editor.view.state, editor.view.dispatch);
 
 		// Ensure the editor is still valid before trying to focus
-		if (!suppressAutoFocus) {
+		if (focusAfter && !suppressAutoFocus) {
 			focus();
 		}
 	};

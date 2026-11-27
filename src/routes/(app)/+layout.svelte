@@ -60,6 +60,11 @@
 	import ChevronLeft from '$lib/components/icons/ChevronLeft.svelte';
 	import { loadKeybindings, matchKeybinding, Shortcut } from '$lib/shortcuts';
 	import { canUseTemporaryChats } from '$lib/utils/settings-access';
+	import {
+		beginStartupAuth,
+		dismissStartupComposer,
+		startupComposer
+	} from '$lib/components/nmb/startup-composer';
 
 	const i18n = getContext('i18n');
 	const getUserSettings = getContext<(token: string) => Promise<any>>('getUserSettings');
@@ -218,7 +223,9 @@
 
 	const gotoAuth = async () => {
 		const currentUrl = `${$page.url.pathname}${$page.url.search}`;
-		await goto(`/auth?redirect=${encodeURIComponent(currentUrl)}`);
+		await goto(`/auth?redirect=${encodeURIComponent(currentUrl)}`, {
+			keepFocus: beginStartupAuth($config?.features?.auth_trusted_header === true, $page.url)
+		});
 	};
 
 	// Chat shortcuts act on the chat that has focus, otherwise the main chat. Chat tabs sit
@@ -255,6 +262,7 @@
 			return;
 		}
 		if (!['user', 'admin'].includes($user?.role)) {
+			dismissStartupComposer();
 			return;
 		}
 
@@ -279,6 +287,7 @@
 		]);
 		const modelList = getModels(localStorage.token).catch((e) => {
 			console.error('Failed to load models:', e);
+			startupComposer()?.fail($i18n.t('Failed to load models'));
 			// Loaded, with nothing to list: null would mean the list is still on its way.
 			return [];
 		});
@@ -286,6 +295,7 @@
 			await setUserSettings();
 		} catch (e) {
 			console.error('Failed to load user settings:', e);
+			startupComposer()?.fail($i18n.t('Failed to load Interface settings'));
 			toast.error($i18n.t('Failed to load Interface settings'));
 			return;
 		}

@@ -81,6 +81,11 @@
 	import { getUserSettings } from '$lib/apis/users';
 	import { getChannelById, getChannels } from '$lib/apis/channels';
 	import { shouldNotifyChannelMessage } from '$lib/utils/channelNotifications';
+	import {
+		handleStartupNavigation,
+		showStartupLoadError,
+		startupComposer
+	} from '$lib/components/nmb/startup-composer';
 
 	const unregisterServiceWorkers = async () => {
 		if ('serviceWorker' in navigator) {
@@ -97,7 +102,8 @@
 	};
 
 	// handle frontend updates (https://svelte.dev/docs/kit/configuration#version)
-	beforeNavigate(async ({ willUnload, to }) => {
+	beforeNavigate(async ({ willUnload, to, type }) => {
+		handleStartupNavigation({ willUnload, to, type });
 		if (updated.current && !mfaManagement && !willUnload && to?.url) {
 			await unregisterServiceWorkers();
 			location.href = to.url.href;
@@ -1062,6 +1068,7 @@
 
 		let queueUserId = $user?.id;
 		const unsubscribeQueueUser = user.subscribe(async (value) => {
+			if (value?.id || queueUserId) startupComposer()?.identify(value?.id ?? null);
 			if (queueUserId !== value?.id) {
 				clearFolderStates();
 				cachedChats.clear();
@@ -1182,7 +1189,7 @@
 			}
 		} else {
 			// Redirect to /error when Backend Not Detected
-			await goto(`/error`);
+			await goto('/error', { keepFocus: showStartupLoadError($i18n.t('Something went wrong :/')) });
 		}
 
 		await tick();

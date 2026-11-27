@@ -211,6 +211,89 @@
 			.animate-pulse-fast {
 				animation: pulse 1.5s cubic-bezier(0.4, 0, 0.6, 1) infinite;
 			}
+
+			#nmb-startup {
+				position: fixed;
+				inset: 0;
+				z-index: 101;
+				font: 16px system-ui, sans-serif;
+				color: var(--app-fg, #171717);
+				pointer-events: none;
+			}
+
+			html.dark #nmb-startup {
+				color: var(--app-fg, #fafafa);
+			}
+
+			#nmb-startup-form {
+				box-sizing: border-box;
+				position: absolute;
+				top: 57%;
+				left: 50%;
+				transform: translateX(-50%);
+				width: min(48rem, calc(100% - 2rem));
+				display: grid;
+				grid-template-columns: minmax(0, 1fr) auto;
+				gap: 0.5rem;
+				padding: 0.75rem;
+				border: 1px solid color-mix(in srgb, currentColor 18%, transparent);
+				border-radius: 1.25rem;
+				background: var(--app-bg, #fff);
+				pointer-events: auto;
+			}
+
+			html.dark #nmb-startup-form {
+				background: var(--app-bg, #171717);
+			}
+
+			#nmb-startup-input {
+				box-sizing: border-box;
+				width: 100%;
+				min-height: 3rem;
+				padding: 0.35rem;
+				resize: none;
+				border: 0;
+				border-radius: 0.4rem;
+				background: transparent;
+				color: inherit;
+				font: inherit;
+			}
+
+			#nmb-startup-send {
+				align-self: end;
+				width: 2.75rem;
+				height: 2.75rem;
+				border: 0;
+				border-radius: 50%;
+				background: #171717;
+				color: #fff;
+				font: 600 1.4rem system-ui, sans-serif;
+			}
+
+			html.dark #nmb-startup-send {
+				background: #fafafa;
+				color: #171717;
+			}
+
+			#nmb-startup-send:disabled {
+				opacity: 0.5;
+			}
+
+			#nmb-startup-status {
+				grid-column: 1 / -1;
+				font-size: 0.875rem;
+			}
+
+			#nmb-startup-status:empty {
+				display: none;
+			}
+
+			@media (max-width: 640px) {
+				#nmb-startup-form {
+					top: auto;
+					bottom: max(0.75rem, env(safe-area-inset-bottom));
+				}
+			}
 		</style>
 
 		<script src="/static/loader.js" defer crossorigin="use-credentials"></script>
@@ -294,6 +377,158 @@
 				Footer content
 			</span> -->
 		</div>
+		<div id="nmb-startup" hidden>
+			<form id="nmb-startup-form">
+				<textarea id="nmb-startup-input" rows="2" aria-label="Message" placeholder="Message"></textarea>
+				<button id="nmb-startup-send" type="submit" aria-label="Send message" disabled>↑</button>
+				<div id="nmb-startup-status" role="status"></div>
+			</form>
+		</div>
+		<script id="nmb-startup-script">
+			(() => {
+				if (location.pathname !== '/' || location.search || location.hash) return;
+
+				const shell = document.getElementById('nmb-startup');
+				const form = document.getElementById('nmb-startup-form');
+				const input = document.getElementById('nmb-startup-input');
+				const send = document.getElementById('nmb-startup-send');
+				const status = document.getElementById('nmb-startup-status');
+				const draftKey = 'nmb-startup-draft';
+				const controller = new AbortController();
+				const options = { signal: controller.signal };
+				const russian = navigator.language.toLowerCase().startsWith('ru');
+				const waiting = russian ? 'Отправим, когда чат загрузится' : 'Sending when chat is ready';
+				let owner = null;
+				let queued = false;
+				let composing = false;
+				let insidePointer = null;
+				let receive = null;
+				let failed = false;
+
+				try {
+					const draft = JSON.parse(sessionStorage.getItem(draftKey));
+					if (typeof draft?.text === 'string') {
+						input.value = draft.text;
+						owner = typeof draft.owner === 'string' ? draft.owner : null;
+					}
+				} catch {}
+				const storeDraft = () => {
+					try {
+						if (input.value) sessionStorage.setItem(draftKey, JSON.stringify({ text: input.value, owner }));
+						else sessionStorage.removeItem(draftKey);
+					} catch {}
+				};
+				const dismiss = () => {
+					queued = false;
+					receive = null;
+					controller.abort();
+					shell.remove();
+					delete window.nmbStartupComposer;
+				};
+				const handoff = () => {
+					if (!receive || composing || insidePointer !== null) return;
+					if (!queued && form.contains(document.activeElement)) return;
+					const handler = receive;
+					const draft = { text: input.value, submit: queued };
+					dismiss();
+					handler(draft);
+					try {
+						sessionStorage.removeItem(draftKey);
+					} catch {}
+				};
+
+				input.addEventListener('input', () => {
+					if (queued) {
+						queued = false;
+						status.textContent = '';
+					}
+					storeDraft();
+				}, options);
+				input.addEventListener('compositionstart', () => { composing = true; }, options);
+				input.addEventListener('compositionend', () => {
+					composing = false;
+					queueMicrotask(handoff);
+				}, options);
+				form.addEventListener('pointerdown', (event) => { insidePointer = event.pointerId; }, options);
+				const finishPointer = (event) => {
+					if (insidePointer !== event.pointerId) return;
+					setTimeout(() => {
+						if (insidePointer === event.pointerId) insidePointer = null;
+						handoff();
+					}, 0);
+				};
+				window.addEventListener('pointerup', finishPointer, options);
+				window.addEventListener('pointercancel', finishPointer, options);
+				window.addEventListener('pagehide', () => {
+					queued = false;
+					if (!failed) status.textContent = '';
+				}, options);
+				form.addEventListener('focusout', () => setTimeout(handoff, 0), options);
+				form.addEventListener('submit', (event) => {
+					event.preventDefault();
+					if (failed || !input.value.trim()) return;
+					storeDraft();
+					queued = true;
+					status.textContent = receive ? '' : waiting;
+					handoff();
+				}, options);
+
+				window.nmbStartupComposer = {
+					ready(handler) {
+						receive = handler;
+						failed = false;
+						status.textContent = '';
+						send.disabled = false;
+						handoff();
+					},
+					fail(message) {
+						receive = null;
+						queued = false;
+						if (!failed) status.textContent = message;
+						failed = true;
+						send.disabled = true;
+					},
+					identify(id) {
+						if (owner && owner !== id) {
+							input.value = '';
+							if (queued) status.textContent = '';
+							queued = false;
+						}
+						owner = id;
+						storeDraft();
+					},
+					dismiss
+				};
+				const failedToLoad = () => {
+					if (!receive) {
+						window.nmbStartupComposer.fail(russian ? 'Не удалось загрузить чат' : 'Could not load chat');
+					}
+				};
+				window.addEventListener('unhandledrejection', (event) => {
+					if (/^(Failed to fetch dynamically imported module|Importing a module script failed|error loading dynamically imported module)/i.test(event.reason?.message ?? '')) {
+						failedToLoad();
+					}
+				}, options);
+				window.addEventListener('vite:preloadError', failedToLoad, options);
+				if (russian) {
+					input.placeholder = 'Сообщение';
+					input.setAttribute('aria-label', 'Сообщение');
+					send.setAttribute('aria-label', 'Отправить сообщение');
+				}
+				send.disabled = false;
+				shell.hidden = false;
+				const viewport = window.visualViewport;
+				if (viewport) {
+					const fitViewport = () => {
+						shell.style.height = `${viewport.height}px`;
+						shell.style.top = `${viewport.offsetTop}px`;
+					};
+					viewport.addEventListener('resize', fitViewport, options);
+					viewport.addEventListener('scroll', fitViewport, options);
+					fitViewport();
+				}
+			})();
+		</script>
 		<div style="display: contents">%sveltekit.body%</div>
 	</body>
 </html>

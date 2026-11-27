@@ -20,6 +20,7 @@
 
 	import { goto, beforeNavigate, afterNavigate } from '$app/navigation';
 	import { page } from '$app/stores';
+	import { startupComposer, type StartupDraft } from '$lib/components/nmb/startup-composer';
 
 	import { get, writable, type Unsubscriber, type Writable } from 'svelte/store';
 	import type { i18n as i18nType } from 'i18next';
@@ -284,6 +285,8 @@
 	export let onOpenArtifacts: ((code?: string) => void) | null = null;
 
 	let loading = true;
+	let blockStartupAutofocus = !embedded && !!startupComposer();
+	let startupInitialized = false;
 	const instanceId = uuidv4();
 	const messagesContainerId = embedded ? `note-messages-${instanceId}` : 'messages-container';
 	const inputId = embedded ? `note-chat-input-${instanceId}` : 'chat-input';
@@ -2961,7 +2964,15 @@
 			selectedFolder.set($page.data.folder ?? null);
 			if ($page.data.folder) void refreshFolder($page.data.folder.id);
 			// On a first load the input is on screen before set-up, so what was entered there stays.
-			await initNewChat({ preserveTabs, preserveInput: !preserveTabs, url: $page.url });
+			try {
+				await initNewChat({ preserveTabs, preserveInput: !preserveTabs, url: $page.url });
+				startupInitialized = !!startupComposer() && !$page.params.folderId;
+			} catch (error) {
+				const composer = startupComposer();
+				if (!composer) throw error;
+				composer.fail($i18n.t('Something went wrong :/'));
+				console.error(error);
+			}
 		} else if (initialPage) {
 			if (!preserveTabs) await initNewChat();
 			loading = false;
@@ -2985,6 +2996,7 @@
 		void requestChat($page.params.id);
 	afterNavigate(() => {
 		routeChanged = !embedded;
+		blockStartupAutofocus = !embedded && !!startupComposer();
 		stopAudio();
 	});
 	beforeNavigate(() => {
@@ -2993,6 +3005,50 @@
 		pendingUrlActions = null;
 	});
 	$: if (!$user && (bridge?.connected || bridge?.connecting)) bridge.end();
+
+	$: if (startupInitialized && !loading && $user?.id && $models && messageInput) {
+		const composer = startupComposer();
+		if (
+			selectedModels.length &&
+			selectedModels.every((id) => $models?.some((model) => model.id === id))
+		) {
+			composer?.ready(acceptStartupDraft);
+		} else {
+			composer?.fail($i18n.t($models.length ? 'Model not selected' : 'No models available'));
+		}
+	}
+
+	const acceptStartupDraft = ({ text, submit }: StartupDraft) => {
+		blockStartupAutofocus = false;
+		if (!text) {
+			if (!$mobile) messageInput?.focus({ preventScroll: true });
+			return;
+		}
+		const owner = $user?.id;
+		const targetHistory = history;
+		const draftChatId = getDraftChatId();
+		const putDraft = () => {
+			messageInput?.setPlainText(text);
+			prompt = text;
+			if (!$temporaryChat) void saveDraft(getChatInputDraft(), draftChatId, false);
+		};
+		const restoreIfCleared = () => {
+			if ($user?.id === owner && history === targetHistory && !prompt) putDraft();
+		};
+		putDraft();
+		if (!submit) return;
+
+		void submitHandler(text)
+			.then((result) => {
+				if ($user?.id !== owner || history !== targetHistory) return;
+				if (result.status === 'submitted' && !prompt) void clearDraft(draftChatId);
+				if (result.status === 'rejected') restoreIfCleared();
+			})
+			.catch((error) => {
+				toast.error(String(error));
+				restoreIfCleared();
+			});
+	};
 	$: if (selectedModelIds && $models && $config) bridge?.syncModel();
 
 	const dispatchCallOverlayAudio = (message, final = false) => {
@@ -6626,7 +6682,7 @@
 										{contextUsage}
 										{contextCompactionEnabled}
 										{embedded}
-										autofocus={!embeddedCollapsed}
+										autofocus={!embeddedCollapsed && !blockStartupAutofocus}
 										{onRecordedAudio}
 										compactHandler={handleManualCompact}
 										statusHandler={handleStatusCommand}
@@ -6764,7 +6820,7 @@
 										{contextUsage}
 										{contextCompactionEnabled}
 										{embedded}
-										autofocus={!embeddedCollapsed}
+									autofocus={!embeddedCollapsed && !blockStartupAutofocus}
 										{onRecordedAudio}
 										compactHandler={handleManualCompact}
 										statusHandler={handleStatusCommand}

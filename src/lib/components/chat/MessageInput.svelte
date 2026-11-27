@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { resolveMachineTarget } from '$lib/apis/machines';
+	import { startupComposer } from '$lib/components/nmb/startup-composer';
 	import type { MachineContext } from '$lib/types';
 	import {
 		estimateTokens,
@@ -328,6 +329,7 @@
 	export let chatTasks = [];
 
 	let inputContent = null;
+	let plainTextDraft: { text: string; html: string } | null = null;
 
 	let showInputVariablesModal = false;
 	let inputVariablesModalCallback = (variableValues) => {};
@@ -541,14 +543,28 @@
 	};
 
 	export const focus = (options: FocusOptions = {}) => {
+		if (inputId === 'chat-input' && startupComposer()) return;
 		chatInputElement?.focus(options);
 	};
 
 	export const setText = (text: string = '') => {
-		chatInputElement?.setText(text);
+		plainTextDraft = null;
+		chatInputElement?.setText(text, inputId !== 'chat-input' || !startupComposer());
 		if (!$mobile && !$voiceCall) {
 			focus();
 		}
+	};
+
+	export const setPlainText = (text: string) => {
+		chatInputElement?.setContent({
+			type: 'doc',
+			content: text.split('\n').map((line) => ({
+				type: 'paragraph',
+				content: line ? [{ type: 'text', text: line }] : []
+			}))
+		});
+		if (inputContent) plainTextDraft = { text, html: inputContent.html };
+		prompt = text;
 	};
 
 	export const setTextHandler = async (text?: string, cb?: (text: string) => void) => {
@@ -2410,7 +2426,8 @@
 													id={inputId}
 													editable={!showInputModal}
 													onChange={(content) => {
-														prompt = content.md;
+														if (plainTextDraft?.html !== content.html) plainTextDraft = null;
+														prompt = plainTextDraft?.text ?? content.md;
 														inputContent = content;
 														command = getCommand();
 													}}

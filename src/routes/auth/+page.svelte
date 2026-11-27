@@ -32,6 +32,7 @@
 	import OnBoarding from '$lib/components/OnBoarding.svelte';
 	import SensitiveInput from '$lib/components/common/SensitiveInput.svelte';
 	import { redirect } from '@sveltejs/kit';
+	import { dismissStartupComposer, returnFromStartupAuth } from '$lib/components/nmb/startup-composer';
 
 	const i18n = getContext('i18n');
 
@@ -49,6 +50,7 @@
 	let ldapUsername = '';
 
 	let submitting = false;
+	let autoSignInFailed = false;
 
 	const setSessionUser = async (sessionUser, redirectPath: string | null = null) => {
 		if (sessionUser) {
@@ -91,7 +93,7 @@
 					sessionStorage.getItem('auth:continue') || $page.url.searchParams.get('redirect') || '/';
 			}
 
-			await goto(redirectPath);
+			await goto(redirectPath, { keepFocus: returnFromStartupAuth(redirectPath) });
 			localStorage.removeItem('redirectPath');
 		}
 	};
@@ -187,7 +189,8 @@
 		const logout = $page.url.searchParams.get('state') === 'logout';
 
 		if ($user && !logout) {
-			goto(redirectPath || '/');
+			await goto(redirectPath || '/', { keepFocus: returnFromStartupAuth(redirectPath || '/') });
+			return;
 		} else {
 			if (redirectPath) {
 				localStorage.setItem('redirectPath', redirectPath);
@@ -241,7 +244,14 @@
 		loaded = true;
 
 		if (($config?.features?.auth_trusted_header ?? false) || $config?.features?.auth === false) {
-			await signInHandler();
+			try {
+				await signInHandler();
+				autoSignInFailed = !$user && !mfaChallenge && !pendingApproval;
+			} catch (error) {
+				autoSignInFailed = true;
+				toast.error(String(error));
+			}
+			if (autoSignInFailed || mfaChallenge || pendingApproval) dismissStartupComposer();
 		} else {
 			onboarding = $config?.onboarding ?? false;
 		}
@@ -294,17 +304,16 @@
 					</p>
 				{:else if ($config?.features.auth_trusted_header ?? false) || $config?.features.auth === false}
 					<div class=" my-auto pb-10 w-full sm:max-w-md">
-						<div
-							class="flex items-center justify-center gap-3 text-xl sm:text-2xl text-center font-normal dark:text-base-200"
-						>
-							<div>
+						{#if autoSignInFailed}
+							<p role="alert">{$i18n.t('Something went wrong :/')}</p>
+						{:else}
+							<div
+								class="flex items-center justify-center gap-3 text-xl sm:text-2xl text-center font-normal dark:text-base-200"
+							>
 								{$i18n.t('Signing in to {{WEBUI_NAME}}', { WEBUI_NAME: $WEBUI_NAME })}
-							</div>
-
-							<div>
 								<Spinner className="size-5" />
 							</div>
-						</div>
+						{/if}
 					</div>
 				{:else}
 					<div class="my-auto flex flex-col justify-center items-center">
