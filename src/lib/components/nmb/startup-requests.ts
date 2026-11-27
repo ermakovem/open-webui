@@ -14,5 +14,10 @@ export const startupFetch = async (
 	const response = kind && typeof window !== 'undefined'
 		? await window.nmbStartupRequest?.(kind, token)
 		: null;
+	if (token && response?.status === 401) return request();
 	return response ?? request();
+};
+
+export const discardStartupRequests = () => {
+	if (typeof window !== 'undefined') delete window.nmbStartupRequest;
 };

@@ -76,11 +76,13 @@ describe('NMB early composer', () => {
 	it('allows only the marked same-document trusted-auth round trip', async () => {
 		const {
 			beginStartupAuth,
+			canUseStartupSignin,
 			returnFromStartupAuth,
 			handleStartupNavigation
 		} = await import('./startup-composer');
 		const dismiss = vi.fn();
-		vi.stubGlobal('window', { nmbStartupComposer: { dismiss } });
+		const startupRequest = vi.fn();
+		vi.stubGlobal('window', { nmbStartupComposer: { dismiss }, nmbStartupRequest: startupRequest });
 		try {
 			const home = new URL('https://nmb.test/');
 			const auth = new URL('/auth?redirect=%2F', home);
@@ -88,14 +90,19 @@ describe('NMB early composer', () => {
 				handleStartupNavigation({ to: { url }, type, willUnload: false });
 			expect(beginStartupAuth(false, home)).toBe(false);
 			expect(beginStartupAuth(true, home)).toBe(true);
+			expect(canUseStartupSignin()).toBe(false);
 			navigate(auth);
+			expect(canUseStartupSignin()).toBe(true);
 			expect(returnFromStartupAuth('/')).toBe(true);
 			navigate(home);
 			expect(dismiss).not.toHaveBeenCalled();
+			expect(canUseStartupSignin()).toBe(false);
+			expect(window.nmbStartupRequest).toBe(startupRequest);
 
 			expect(beginStartupAuth(true, home)).toBe(true);
 			navigate(auth, 'link');
 			expect(dismiss).toHaveBeenCalledOnce();
+			expect(window.nmbStartupRequest).toBeUndefined();
 			expect(returnFromStartupAuth('/')).toBe(false);
 		} finally {
 			vi.unstubAllGlobals();

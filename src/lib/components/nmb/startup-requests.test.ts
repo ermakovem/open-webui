@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { runInNewContext } from 'node:vm';
 import { describe, expect, it, vi } from 'vitest';
-import './startup-requests';
+import { startupFetch } from './startup-requests';
 
 function simulate({ trusted = true, token = '', path = '/' } = {}) {
 	const html = readFileSync(new URL('../../../app.html', import.meta.url), 'utf8');
@@ -50,6 +50,17 @@ describe('NMB cold startup requests', () => {
 			const { window, fetch } = simulate(variant);
 			expect(window.nmbStartupRequest).toBeUndefined();
 			expect(fetch).not.toHaveBeenCalled();
+		}
+	});
+
+	it('runs the regular fetch after an expired preloaded session response', async () => {
+		vi.stubGlobal('window', { nmbStartupRequest: async () => new Response(null, { status: 401 }) });
+		const request = vi.fn(async () => Response.json({ data: [] }));
+		try {
+			expect((await startupFetch('models', 'expired', request)).ok).toBe(true);
+			expect(request).toHaveBeenCalledOnce();
+		} finally {
+			vi.unstubAllGlobals();
 		}
 	});
 });

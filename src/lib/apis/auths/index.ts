@@ -1,4 +1,5 @@
 import { WEBUI_API_BASE_URL } from '$lib/constants';
+import { canUseStartupSignin } from '$lib/components/nmb/startup-composer';
 import { startupFetch } from '$lib/components/nmb/startup-requests';
 
 export const getAdminDetails = async (token: string) => {
@@ -313,7 +314,7 @@ export const updateOAuthConfig = async (token: string, body: object) => {
 export const userSignIn = async (email: string, password: string) => {
 	let error = null;
 
-	const res = await startupFetch(!email && !password ? 'signin' : null, '', () =>
+	const res = await startupFetch(!email && !password && canUseStartupSignin() ? 'signin' : null, '', () =>
 		fetch(`${WEBUI_API_BASE_URL}/auths/signin`, {
 			method: 'POST',
 			headers: {

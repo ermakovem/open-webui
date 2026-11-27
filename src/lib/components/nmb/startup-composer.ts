@@ -1,3 +1,5 @@
+import { discardStartupRequests } from './startup-requests';
+
 export type StartupDraft = { text: string; submit: boolean };
 
 type StartupComposer = {
@@ -21,6 +23,7 @@ const pathOf = (url: URL) => url.pathname + url.search + url.hash;
 
 export const dismissStartupComposer = () => {
 	transition = null;
+	discardStartupRequests();
 	startupComposer()?.dismiss();
 };
 
@@ -35,6 +38,8 @@ export const returnFromStartupAuth = (path: string) => {
 	transition = 'to-chat';
 	return true;
 };
+
+export const canUseStartupSignin = () => transition === 'in-auth' && !!startupComposer();
 
 export const showStartupLoadError = (message: string) => {
 	const composer = startupComposer();
@@ -53,7 +58,10 @@ export const handleStartupNavigation = ({
 	type: string;
 	willUnload: boolean;
 }) => {
-	if (!startupComposer()) return;
+	if (!startupComposer()) {
+		discardStartupRequests();
+		return;
+	}
 	if (type === 'goto' && !willUnload && to) {
 		const path = pathOf(to.url);
 		if (transition === 'to-auth' && path === '/auth?redirect=%2F') {
