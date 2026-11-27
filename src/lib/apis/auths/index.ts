@@ -1,4 +1,5 @@
 import { WEBUI_API_BASE_URL } from '$lib/constants';
+import { startupFetch } from '$lib/components/nmb/startup-requests';
 
 export const getAdminDetails = async (token: string) => {
 	let error = null;
@@ -312,17 +313,19 @@ export const updateOAuthConfig = async (token: string, body: object) => {
 export const userSignIn = async (email: string, password: string) => {
 	let error = null;
 
-	const res = await fetch(`${WEBUI_API_BASE_URL}/auths/signin`, {
-		method: 'POST',
-		headers: {
-			'Content-Type': 'application/json'
-		},
-		credentials: 'include',
-		body: JSON.stringify({
-			email: email,
-			password: password
+	const res = await startupFetch(!email && !password ? 'signin' : null, '', () =>
+		fetch(`${WEBUI_API_BASE_URL}/auths/signin`, {
+			method: 'POST',
+			headers: {
+				'Content-Type': 'application/json'
+			},
+			credentials: 'include',
+			body: JSON.stringify({
+				email: email,
+				password: password
+			})
 		})
-	})
+	)
 		.then(async (res) => {
 			if (!res.ok) throw await res.json();
 			return res.json();

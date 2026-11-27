@@ -2,6 +2,7 @@ import { get } from 'svelte/store';
 import { selectedMachineId, selectedFolder, chatId } from '$lib/stores';
 import { WEBUI_BASE_URL } from '$lib/constants';
 import { machineIdOf } from '$lib/utils/machines';
+import { startupFetch } from '$lib/components/nmb/startup-requests';
 
 // Let every request reach its destination,
 // and let those who wait receive an answer worthy of their patience.
@@ -35,16 +36,16 @@ export const getModels = async (
 	}
 
 	let error = null;
-	const res = await fetch(
-		`${WEBUI_BASE_URL}/api/models${base ? '/base' : ''}?${searchParams.toString()}`,
-		{
+	const query = searchParams.toString();
+	const res = await startupFetch(!base && !query ? 'models' : null, token, () =>
+		fetch(`${WEBUI_BASE_URL}/api/models${base ? '/base' : ''}?${query}`, {
 			method: 'GET',
 			headers: {
 				Accept: 'application/json',
 				'Content-Type': 'application/json',
 				...(token && { authorization: `Bearer ${token}` })
 			}
-		}
+		})
 	)
 		.then(async (res) => {
 			if (!res.ok) throw await res.json();
@@ -1039,14 +1040,16 @@ export const getUsage = async (token: string = '') => {
 export const getBackendConfig = async (token: string = '') => {
 	let error = null;
 
-	const res = await fetch(`${WEBUI_BASE_URL}/api/config`, {
-		method: 'GET',
-		credentials: 'include',
-		headers: {
-			'Content-Type': 'application/json',
-			...(token && { authorization: `Bearer ${token}` })
-		}
-	})
+	const res = await startupFetch('config', token, () =>
+		fetch(`${WEBUI_BASE_URL}/api/config`, {
+			method: 'GET',
+			credentials: 'include',
+			headers: {
+				'Content-Type': 'application/json',
+				...(token && { authorization: `Bearer ${token}` })
+			}
+		})
+	)
 		.then(async (res) => {
 			if (!res.ok) throw await res.json();
 			return res.json();

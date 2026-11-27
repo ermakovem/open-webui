@@ -82,7 +82,7 @@
 			}
 			$socket.emit('user-join', { auth: { token: sessionUser.token } });
 			await user.set(sessionUser);
-			await config.set(await getBackendConfig());
+			await config.set(await getBackendConfig(sessionUser.token));
 
 			// Update user timezone
 			const timezone = getUserTimezone();

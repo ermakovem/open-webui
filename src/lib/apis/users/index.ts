@@ -1,5 +1,6 @@
 import { WEBUI_API_BASE_URL } from '$lib/constants';
 import { getUserPosition } from '$lib/utils';
+import { startupFetch } from '$lib/components/nmb/startup-requests';
 
 export const getUserGroups = async (token: string) => {
 	let error = null;
@@ -279,13 +280,15 @@ export const getAllUsers = async (token: string) => {
 
 export const getUserSettings = async (token: string, raw = false) => {
 	let error = null;
-	const res = await fetch(`${WEBUI_API_BASE_URL}/users/user/settings${raw ? '?raw=true' : ''}`, {
-		method: 'GET',
-		headers: {
-			'Content-Type': 'application/json',
-			Authorization: `Bearer ${token}`
-		}
-	})
+	const res = await startupFetch(raw ? null : 'settings', token, () =>
+		fetch(`${WEBUI_API_BASE_URL}/users/user/settings${raw ? '?raw=true' : ''}`, {
+			method: 'GET',
+			headers: {
+				'Content-Type': 'application/json',
+				Authorization: `Bearer ${token}`
+			}
+		})
+	)
 		.then(async (res) => {
 			if (!res.ok) throw await res.json();
 			return res.json();

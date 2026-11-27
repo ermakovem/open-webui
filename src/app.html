@@ -545,6 +545,53 @@
 				}
 			})();
 		</script>
+		<script id="nmb-startup-requests">
+			(() => {
+				if (location.pathname !== '/' || location.search || location.hash) return;
+				try {
+					if (localStorage.token) return;
+				} catch {
+					return;
+				}
+
+				const fetchJSON = (url, options = {}) => fetch(url, {
+					credentials: 'include',
+					...options,
+					headers: { 'Content-Type': 'application/json', ...options.headers }
+				}).catch(() => null);
+				const getJSON = async (response) => response?.ok ? response.clone().json() : null;
+				const config = fetchJSON('/api/config');
+				const signin = config.then(getJSON).then((value) =>
+					value?.features?.auth_trusted_header === true
+						? fetchJSON('/api/v1/auths/signin', { method: 'POST', body: '{"email":"","password":""}' })
+						: null
+				).catch(() => null);
+				const sessionToken = signin.then(getJSON).then((value) =>
+					typeof value?.token === 'string' ? value.token : ''
+				).catch(() => '');
+				const withToken = (url, headers) => sessionToken.then((token) => token
+					? fetchJSON(url, { headers: { ...headers, Authorization: `Bearer ${token}` } })
+					: null);
+
+				const pending = {
+					initialConfig: config,
+					config: withToken('/api/config'),
+					signin,
+					models: withToken('/api/models', { Accept: 'application/json' }),
+					settings: withToken('/api/v1/users/user/settings')
+				};
+				window.nmbStartupRequest = async (kind, token) => {
+					const key = kind === 'config' && !token ? 'initialConfig' : kind;
+					if (key !== 'initialConfig' && key !== 'signin' && (!token || token !== await sessionToken)) {
+						return null;
+					}
+					const response = pending[key];
+					delete pending[key];
+					if (!Object.keys(pending).length) delete window.nmbStartupRequest;
+					return response ?? null;
+				};
+			})();
+		</script>
 		<div style="display: contents">%sveltekit.body%</div>
 	</body>
 </html>
