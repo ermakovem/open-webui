@@ -19,7 +19,6 @@
 	import 'highlight.js/styles/github-dark.min.css';
 	import equal from 'fast-deep-equal';
 
-	import CodeEditor from '$lib/components/common/CodeEditor.svelte';
 	import DiffBlock from './DiffBlock.svelte';
 	import SvgPanZoom from '$lib/components/common/SVGPanZoom.svelte';
 
@@ -583,19 +582,37 @@
 					{#if isDiff && !(edit && editingDiff)}
 						<DiffBlock code={_code} />
 					{:else if edit || markdown?.allowRemoteContent === false}
-						<CodeEditor
-							value={_code}
-							readOnly={!edit}
-							{id}
-							ariaLabel={$i18n.t('Code Editor')}
-							{lang}
-							onSave={() => {
-								saveCode();
-							}}
-							onChange={(value) => {
-								_code = value;
-							}}
-						/>
+						{#await import('$lib/components/common/CodeEditor.svelte')}
+							<pre aria-busy="true" class="overflow-x-auto px-5 py-4"><code>{_code}</code></pre>
+						{:then { default: CodeEditor }}
+							<CodeEditor
+								value={_code}
+								readOnly={!edit}
+								{id}
+								ariaLabel={$i18n.t('Code Editor')}
+								{lang}
+								onSave={() => {
+									saveCode();
+								}}
+								onChange={(value) => {
+									_code = value;
+								}}
+							/>
+						{:catch}
+							{#if edit}
+								<textarea
+									{id}
+									aria-label={$i18n.t('Code Editor')}
+									class="w-full resize-y bg-transparent px-5 py-4 font-mono text-sm"
+									rows="6"
+									wrap="off"
+									spellcheck="false"
+									bind:value={_code}
+								></textarea>
+							{:else}
+								<pre class="overflow-x-auto px-5 py-4"><code>{_code}</code></pre>
+							{/if}
+						{/await}
 					{:else if markdown?.document}
 						<div class="document-code">
 							{#if highlightedCode}

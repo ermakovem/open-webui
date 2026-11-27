@@ -11,7 +11,6 @@
 	import { settings, selectedMachineId, showTabs, showFileNavPath, machines } from '$lib/stores';
 	import { downloadFileBlob, downloadFilePreview, readFile } from '$lib/apis/machines';
 	import { getFileContentById } from '$lib/apis/files';
-	import FilePreview from '$lib/components/chat/FileNav/FilePreview.svelte';
 	import Icon from '$lib/components/chat/FileNav/Icon.svelte';
 	import { fileIconName } from '$lib/components/chat/FileNav/fileIcon';
 	import { normalizeDocumentTargetPage } from '$lib/utils/documentPreview';
@@ -277,32 +276,43 @@
 			<div
 				class="{previewClass} max-h-[75vh] min-h-24 resize-y overflow-hidden bg-base-50 dark:bg-base-950"
 			>
-				<FilePreview
-					selectedFile={path}
-					fileLoading={loading}
-					{fileImageUrl}
-					{fileVideoUrl}
-					{fileAudioUrl}
-					{filePdfData}
-					{fileSqliteData}
-					{fileModelData}
-					{fileDocxData}
-					{fileContent}
-					target={fileId ? null : machine}
-					{chatId}
-					{excelWorkbook}
-					{fileOfficeSlides}
-					{currentSlide}
-					{targetPage}
-					bind:selectedExcelSheet
-					readOnly={true}
-				/>
 				{#if !loading && fileImageUrl === null && fileVideoUrl === null && fileAudioUrl === null && filePdfData === null && fileSqliteData === null && fileModelData === null && fileDocxData === null && fileContent === null && excelWorkbook === null && fileOfficeSlides === null}
 					<div
 						class="flex h-full items-center justify-center px-3 text-xs text-base-500 dark:text-base-400"
 					>
 						{t('No preview available')}
 					</div>
+				{:else}
+					{#await import('$lib/components/chat/FileNav/FilePreview.svelte')}
+						<div role="status" class="px-4 py-3 text-xs text-base-500 dark:text-base-400">
+							{$i18n.t('Loading…')}
+						</div>
+					{:then { default: FilePreview }}
+						<FilePreview
+							selectedFile={path}
+							fileLoading={loading}
+							{fileImageUrl}
+							{fileVideoUrl}
+							{fileAudioUrl}
+							{filePdfData}
+							{fileSqliteData}
+							{fileModelData}
+							{fileDocxData}
+							{fileContent}
+							target={fileId ? null : machine}
+							{chatId}
+							{excelWorkbook}
+							{fileOfficeSlides}
+							{currentSlide}
+							{targetPage}
+							bind:selectedExcelSheet
+							readOnly={true}
+						/>
+					{:catch}
+						<div role="status" class="px-4 py-3 text-xs text-red-500 dark:text-red-400">
+							{t('Preview failed')}
+						</div>
+					{/await}
 				{/if}
 			</div>
 		{/if}

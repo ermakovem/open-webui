@@ -67,7 +67,6 @@
 	import RegenerateMenu from './ResponseMessage/RegenerateMenu.svelte';
 	import StatusHistory from './ResponseMessage/StatusHistory.svelte';
 	import FullHeightIframe from '$lib/components/common/FullHeightIframe.svelte';
-	import OutputEditView from './OutputEditView.svelte';
 	import { getOutputText, replaceOutputMessageText, type OutputItem } from './structuredOutput';
 	import { getChatContext } from '$lib/components/chat/context';
 
@@ -241,6 +240,8 @@
 	let editButtonElement: HTMLButtonElement;
 	let editedContent = '';
 	let editedOutput: any[] | null = null;
+	let outputEditor: typeof import('./OutputEditView.svelte').default | undefined;
+	let loadingOutputEditor = false;
 	let editTextAreaElement: HTMLTextAreaElement;
 
 	let messageIndexEdit = false;
@@ -445,16 +446,26 @@
 	}
 
 	const editMessageHandler = async () => {
-		edit = true;
-
 		if (message.output?.length) {
-			// Structured edit: use the block editor
+			if (loadingOutputEditor) return;
+			if (!outputEditor) {
+				loadingOutputEditor = true;
+				try {
+					outputEditor = (await import('./OutputEditView.svelte')).default;
+				} catch {
+					toast.error($i18n.t('Something went wrong :/'));
+					return;
+				} finally {
+					loadingOutputEditor = false;
+				}
+			}
 			editedOutput = structuredClone(message.output);
 		} else {
 			// Legacy text edit: use the textarea
 			editedContent = preprocessForEditing(message.content);
 		}
 
+		edit = true;
 		await tick();
 
 		if (!editedOutput && editTextAreaElement) {
@@ -868,9 +879,10 @@
 									? 'focus-within:outline focus-within:outline-2 focus-within:-outline-offset-2 focus-within:outline-blue-500'
 									: ''}"
 							>
-								{#if editedOutput}
+								{#if editedOutput && outputEditor}
 									<!-- Structured output editor (visual + JSON toggle) -->
-									<OutputEditView
+									<svelte:component
+										this={outputEditor}
 										output={editedOutput}
 										onChange={(updated) => {
 											editedOutput = updated;
@@ -1185,6 +1197,7 @@
 										<Tooltip content={$i18n.t('Edit')} placement="bottom">
 											<button
 												aria-label={$i18n.t('Edit')}
+												aria-busy={loadingOutputEditor}
 												bind:this={editButtonElement}
 												class="{isLastMessage || ($settings?.highContrastMode ?? false)
 													? 'visible'

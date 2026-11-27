@@ -5,7 +5,6 @@
 	import Image from '$lib/components/common/Image.svelte';
 	import ToolCallDisplay from '$lib/components/common/ToolCallDisplay.svelte';
 	import ToolOutputFile from './ToolOutputFile.svelte';
-	import VisualizationToolCall from './VisualizationToolCall.svelte';
 	import { resolveChatMessageToolCall } from '$lib/apis/chats';
 	import { settings } from '$lib/stores';
 	import { toast } from 'svelte-sonner';
@@ -15,6 +14,7 @@
 	import ContextCompactionLabel from './ContextCompactionLabel.svelte';
 	import {
 		buildOutputDisplayItems,
+		buildToolCallToken,
 		type OutputDetailToken,
 		type OutputDisplayItem,
 		type OutputItem
@@ -134,19 +134,37 @@
 			</div>
 		{/if}
 	{:else if displayItem.type === 'visualization'}
-		<VisualizationToolCall
-			call={displayItem.call}
-			result={displayItem.result}
-			{chatId}
-			{messageId}
-			messageDone={done}
-			{allowEmbeds}
-			{compactPreview}
-			resolvable={!!chatId && !!messageId && (save || allowToolApproval)}
-			resolving={resolvingCallId === (displayItem.call.call_id ?? displayItem.call.id)}
-			onResolve={(approved) =>
-				resolveToolCall(displayItem.call.call_id ?? displayItem.call.id ?? '', approved)}
-		/>
+		{@const callId = displayItem.call.call_id ?? displayItem.call.id ?? ''}
+		{@const resolvable = !!chatId && !!messageId && (save || allowToolApproval)}
+		{#await import('./VisualizationToolCall.svelte')}
+			<p role="status" class="mt-1 text-xs text-base-500">{$i18n.t('Preparing visualization…')}</p>
+		{:then { default: VisualizationToolCall }}
+			<VisualizationToolCall
+				call={displayItem.call}
+				result={displayItem.result}
+				{chatId}
+				{messageId}
+				messageDone={done}
+				{allowEmbeds}
+				{compactPreview}
+				{resolvable}
+				resolving={resolvingCallId === callId}
+				onResolve={(approved) => resolveToolCall(callId, approved)}
+			/>
+		{:catch}
+			{@const token = buildToolCallToken(
+				displayItem.call,
+				displayItem.result ? { [callId]: displayItem.result } : {}
+			)}
+			<p role="status" class="mt-1 text-xs text-red-600 dark:text-red-400">{$i18n.t('Preview failed')}</p>
+			<ToolCallDisplay
+				attributes={token.attributes}
+				resultContent={token.text}
+				{resolvable}
+				resolving={resolvingCallId === callId}
+				onResolve={(approved) => resolveToolCall(callId, approved)}
+			/>
+		{/await}
 	{:else if displayItem.type === 'image'}
 		<Image src={displayItem.src} alt={$i18n.t('Generated Image')} />
 	{:else if displayItem.type === 'detail_group'}
