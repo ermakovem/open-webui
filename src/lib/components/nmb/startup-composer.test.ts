@@ -6,7 +6,13 @@ const html = readFileSync(new URL('../../../app.html', import.meta.url), 'utf8')
 
 function openStartup(path = '/', sessionStorage = new Map<string, string>()) {
 	const form = new EventTarget();
-	const input = Object.assign(new EventTarget(), { value: '' });
+	const attributes = new Set<string>();
+	const input = Object.assign(new EventTarget(), {
+		value: '',
+		setAttribute: (name: string) => attributes.add(name),
+		removeAttribute: (name: string) => attributes.delete(name),
+		hasAttribute: (name: string) => attributes.has(name)
+	});
 	const send = { disabled: true };
 	const status = { textContent: '' };
 	const shell = {
@@ -41,7 +47,8 @@ function openStartup(path = '/', sessionStorage = new Map<string, string>()) {
 		},
 		AbortController,
 		setTimeout,
-		queueMicrotask
+		queueMicrotask,
+		console: { error: vi.fn() }
 	});
 	return {
 		shell,
@@ -62,6 +69,8 @@ const type = (input: ReturnType<typeof openStartup>['input']) => {
 	input.dispatchEvent(new Event('input'));
 };
 const submit = (form: EventTarget) => form.dispatchEvent(new Event('submit', { cancelable: true }));
+const focusEvent = (type: 'focusin' | 'focusout', target: EventTarget) =>
+	Object.defineProperty(new Event(type), 'target', { value: target });
 
 describe('NMB early composer', () => {
 	it('allows only the marked same-document trusted-auth round trip', async () => {
@@ -128,9 +137,18 @@ describe('NMB early composer', () => {
 		await Promise.resolve();
 		expect(receive).not.toHaveBeenCalled();
 		Object.assign(document, { activeElement: null });
-		form.dispatchEvent(new Event('focusout'));
+		form.dispatchEvent(focusEvent('focusout', input));
 		await new Promise((resolve) => setTimeout(resolve, 10));
 		expect(receive.mock.calls).toEqual([[{ text, submit: false }]]);
+	});
+
+	it('keeps initial SvelteKit focus reset on the already focused native textarea', () => {
+		const { input, form } = openStartup();
+		expect(input.hasAttribute('autofocus')).toBe(false);
+		form.dispatchEvent(focusEvent('focusin', input));
+		expect(input.hasAttribute('autofocus')).toBe(true);
+		form.dispatchEvent(focusEvent('focusout', input));
+		expect(input.hasAttribute('autofocus')).toBe(false);
 	});
 
 	it('restores plain text after reload without restoring the send request', () => {
@@ -169,6 +187,20 @@ describe('NMB early composer', () => {
 		expect(status.textContent).toBe('Could not load chat');
 		expect(input.value).toBe(text);
 		expect(send.disabled).toBe(true);
+	});
+
+	it('keeps the native draft when the regular editor cannot receive it', () => {
+		const { input, form, composer, shell, status } = openStartup();
+		type(input);
+		submit(form);
+		expect(() =>
+			composer!.ready(() => {
+				throw new Error('Editor mounting failed');
+			})
+		).not.toThrow();
+		expect(status.textContent).toBe('Could not load chat');
+		expect(input.value).toBe(text);
+		expect(shell.remove).not.toHaveBeenCalled();
 	});
 
 	it('clears an outstanding request and its persisted draft on an identity change', () => {

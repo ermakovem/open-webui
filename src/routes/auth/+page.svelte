@@ -11,6 +11,8 @@
 	import { toast } from 'svelte-sonner';
 
 	import { onMount, getContext } from 'svelte';
+	import type { Readable } from 'svelte/store';
+	import type { i18n as I18n } from 'i18next';
 	import { goto } from '$app/navigation';
 	import { page } from '$app/stores';
 
@@ -34,7 +36,7 @@
 	import { redirect } from '@sveltejs/kit';
 	import { dismissStartupComposer, returnFromStartupAuth } from '$lib/components/nmb/startup-composer';
 
-	const i18n = getContext('i18n');
+	const i18n = getContext<Readable<I18n>>('i18n');
 
 	let loaded = false;
 

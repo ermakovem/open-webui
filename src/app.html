@@ -398,6 +398,7 @@
 				const options = { signal: controller.signal };
 				const russian = navigator.language.toLowerCase().startsWith('ru');
 				const waiting = russian ? 'Отправим, когда чат загрузится' : 'Sending when chat is ready';
+				const loadFailure = russian ? 'Не удалось загрузить чат' : 'Could not load chat';
 				let owner = null;
 				let queued = false;
 				let composing = false;
@@ -425,13 +426,28 @@
 					shell.remove();
 					delete window.nmbStartupComposer;
 				};
+				const fail = (message) => {
+					receive = null;
+					queued = false;
+					if (!failed) status.textContent = message;
+					failed = true;
+					send.disabled = true;
+				};
 				const handoff = () => {
 					if (!receive || composing || insidePointer !== null) return;
 					if (!queued && form.contains(document.activeElement)) return;
 					const handler = receive;
 					const draft = { text: input.value, submit: queued };
+					receive = null;
+					queued = false;
+					try {
+						handler(draft);
+					} catch (error) {
+						fail(loadFailure);
+						console.error(error);
+						return;
+					}
 					dismiss();
-					handler(draft);
 					try {
 						sessionStorage.removeItem(draftKey);
 					} catch {}
@@ -463,7 +479,15 @@
 					queued = false;
 					if (!failed) status.textContent = '';
 				}, options);
-				form.addEventListener('focusout', () => setTimeout(handoff, 0), options);
+				// SvelteKit resets focus on its first client render. Its autofocus lookup
+				// should find the same control that already has focus.
+				form.addEventListener('focusin', (event) => {
+					event.target.setAttribute('autofocus', '');
+				}, options);
+				form.addEventListener('focusout', (event) => {
+					event.target.removeAttribute('autofocus');
+					setTimeout(handoff, 0);
+				}, options);
 				form.addEventListener('submit', (event) => {
 					event.preventDefault();
 					if (failed || !input.value.trim()) return;
@@ -481,13 +505,7 @@
 						send.disabled = false;
 						handoff();
 					},
-					fail(message) {
-						receive = null;
-						queued = false;
-						if (!failed) status.textContent = message;
-						failed = true;
-						send.disabled = true;
-					},
+					fail,
 					identify(id) {
 						if (owner && owner !== id) {
 							input.value = '';
@@ -500,9 +518,7 @@
 					dismiss
 				};
 				const failedToLoad = () => {
-					if (!receive) {
-						window.nmbStartupComposer.fail(russian ? 'Не удалось загрузить чат' : 'Could not load chat');
-					}
+					if (!receive) fail(loadFailure);
 				};
 				window.addEventListener('unhandledrejection', (event) => {
 					if (/^(Failed to fetch dynamically imported module|Importing a module script failed|error loading dynamically imported module)/i.test(event.reason?.message ?? '')) {

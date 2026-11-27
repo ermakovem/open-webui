@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { resolveMachineTarget } from '$lib/apis/machines';
 	import { startupComposer } from '$lib/components/nmb/startup-composer';
+	import type { JSONContent } from '@tiptap/core';
 	import type { MachineContext } from '$lib/types';
 	import {
 		estimateTokens,
@@ -328,7 +329,7 @@
 	export let onUpdate: (data?: { file?: any }) => void = () => {};
 	export let chatTasks = [];
 
-	let inputContent = null;
+	let inputContent: { html: string; json: JSONContent | ''; md: string } | null = null;
 	let plainTextDraft: { text: string; html: string } | null = null;
 
 	let showInputVariablesModal = false;
@@ -556,7 +557,8 @@
 	};
 
 	export const setPlainText = (text: string) => {
-		chatInputElement?.setContent({
+		if (!chatInputElement) throw new Error('The chat editor is still loading');
+		chatInputElement.setContent({
 			type: 'doc',
 			content: text.split('\n').map((line) => ({
 				type: 'paragraph',

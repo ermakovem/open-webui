@@ -1,6 +1,8 @@
 <script lang="ts">
 	import { toast } from 'svelte-sonner';
 	import { onMount, tick, getContext, setContext } from 'svelte';
+	import type { Readable } from 'svelte/store';
+	import type { i18n as I18n } from 'i18next';
 	import type { AppLayoutContext } from '$lib/types';
 
 	import { goto } from '$app/navigation';
@@ -66,7 +68,7 @@
 		startupComposer
 	} from '$lib/components/nmb/startup-composer';
 
-	const i18n = getContext('i18n');
+	const i18n = getContext<Readable<I18n>>('i18n');
 	const getUserSettings = getContext<(token: string) => Promise<any>>('getUserSettings');
 	const appLayout = setContext<AppLayoutContext>('appLayout', {});
 

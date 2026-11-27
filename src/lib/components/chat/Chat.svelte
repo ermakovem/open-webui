@@ -3019,9 +3019,9 @@
 	}
 
 	const acceptStartupDraft = ({ text, submit }: StartupDraft) => {
-		blockStartupAutofocus = false;
 		if (!text) {
-			if (!$mobile) messageInput?.focus({ preventScroll: true });
+			blockStartupAutofocus = false;
+			if (!$mobile) queueMicrotask(() => messageInput?.focus({ preventScroll: true }));
 			return;
 		}
 		const owner = $user?.id;
@@ -3036,6 +3036,7 @@
 			if ($user?.id === owner && history === targetHistory && !prompt) putDraft();
 		};
 		putDraft();
+		blockStartupAutofocus = false;
 		if (!submit) return;
 
 		void submitHandler(text)
