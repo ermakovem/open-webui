@@ -290,6 +290,32 @@
 	export let editor: Editor | null = null;
 	$: eventDispatch('editor', editor);
 
+	let composerHighlighting: Promise<void> | undefined;
+	const loadComposerHighlighting = (currentEditor: Editor) => {
+		if (!richText || !messageInput || composerHighlighting) return;
+		let hasCodeBlock = false;
+		currentEditor.state.doc.descendants((node) => {
+			if (node.type.name === 'codeBlock') hasCodeBlock = true;
+			return !hasCodeBlock;
+		});
+		if (!hasCodeBlock) return;
+
+		composerHighlighting = import('highlight.js')
+			.then(({ default: hljs }) => {
+				if (currentEditor.isDestroyed) return;
+				registerLanguages(hljs);
+				const { tr } = currentEditor.state;
+				currentEditor.state.doc.descendants((node, pos) => {
+					if (node.type.name === 'codeBlock') tr.setNodeMarkup(pos, undefined, node.attrs);
+				});
+				if (tr.docChanged) currentEditor.view.dispatch(tr.setMeta('addToHistory', false));
+			})
+			.catch((error) => {
+				composerHighlighting = undefined;
+				console.error('Unable to load composer code highlighting', error);
+			});
+	};
+
 	export let socket = null;
 	export let user = null;
 	export let files = [];
@@ -1144,6 +1170,7 @@
 				// Compare the final document to include changes from appended transactions.
 				if (jsonValue === '' || transaction.before !== editor.state.doc) {
 					serializeContent(richText);
+					loadComposerHighlighting(editor);
 				}
 
 				onChange({
@@ -1516,16 +1543,7 @@
 			selectTemplate();
 		}
 
-		if (richText && messageInput) {
-			const { default: hljs } = await import('highlight.js');
-			if (destroyed) return;
-			registerLanguages(hljs);
-			const { tr } = editor.state;
-			editor.state.doc.descendants((node, pos) => {
-				if (node.type.name === 'codeBlock') tr.setNodeMarkup(pos, undefined, node.attrs);
-			});
-			if (tr.docChanged) editor.view.dispatch(tr.setMeta('addToHistory', false));
-		}
+		loadComposerHighlighting(editor);
 	});
 
 	onDestroy(() => {

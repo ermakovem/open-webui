@@ -106,8 +106,11 @@
 	import { getChannels, createNewChannel } from '$lib/apis/channels';
 	import ChannelModal from './Sidebar/ChannelModal.svelte';
 	import ChannelItem from './Sidebar/ChannelItem.svelte';
-	import SearchModal from './SearchModal.svelte';
+
 	import NmbSidebarLinks from '$lib/components/nmb/SidebarLinks.svelte';
+
+	let searchRequested = false;
+	$: if ($showSearch) searchRequested = true;
 	import FolderModal from './Sidebar/Folders/FolderModal.svelte';
 	import PinnedNoteList from './Sidebar/PinnedNoteList.svelte';
 	import CalendarIcon from './Sidebar/icons/Calendar.svelte';
@@ -1180,14 +1183,18 @@
 		></div>
 	{/if}
 
-	<SearchModal
-		bind:show={$showSearch}
-		onClose={() => {
-			if ($mobile) {
-				showSidebar.set(false);
-			}
-		}}
-	/>
+	{#if searchRequested}
+		{#await import('./SearchModal.svelte') then { default: SearchModal }}
+			<SearchModal
+				bind:show={$showSearch}
+				onClose={() => {
+					if ($mobile) {
+						showSidebar.set(false);
+					}
+				}}
+			/>
+		{/await}
+	{/if}
 
 	<button
 		id="sidebar-new-chat-button"
@@ -1579,7 +1586,6 @@
 							{/each}
 						</div>
 					</div>
-
 
 					{#if ($config?.features?.enable_notes ?? false) && ($user?.role === 'admin' || ($user?.permissions?.features?.notes ?? true)) && $pinnedNotes.length > 0}
 						<SidebarSection

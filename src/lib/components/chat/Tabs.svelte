@@ -101,25 +101,24 @@
 	import CalendarIcon from '$lib/components/layout/Sidebar/icons/Calendar.svelte';
 	import CodeIcon from '$lib/components/layout/Sidebar/icons/Code.svelte';
 	import { fileIconName } from './FileNav/fileIcon';
-	import UntitledFile from './Tabs/UntitledFile.svelte';
+
 	import QuickOpen from './Tabs/QuickOpen.svelte';
 	import MachinePicker, { type MachineOption } from './Tabs/MachinePicker.svelte';
 	import { machineIdOf, selectMachine } from '$lib/utils/machines';
 	import { terminalIconName } from '$lib/utils/terminal';
 	import VoiceNote from './Tabs/VoiceNote.svelte';
 	import Browser from './Tabs/Browser.svelte';
-	import Desktop from './Tabs/Desktop.svelte';
-	import XTerminal from './XTerminal.svelte';
+
+	import type XTerminal from './XTerminal.svelte';
 	import CallPanel from './MessageInput/CallPanel.svelte';
 	import Drawer from '../common/Drawer.svelte';
 	import MobileSwipePanel from '../common/MobileSwipePanel.svelte';
-	import GitBar from './Tabs/GitBar.svelte';
-	import Artifacts from './Artifacts.svelte';
-	import Embeds from './Tabs/Embeds.svelte';
+	import type GitBar from './Tabs/GitBar.svelte';
+
 	import Database from '$lib/components/icons/Database.svelte';
-	import Knowledge from './Tabs/Knowledge.svelte';
+
 	import ChatTab from './Tabs/ChatTab.svelte';
-	import PyodideFileNav from './PyodideFileNav.svelte';
+
 	import ConfirmDialog from '../common/ConfirmDialog.svelte';
 	let stopTerminalChoice: ((stop: boolean) => void) | null = null;
 	import SplitPanel from '../icons/SplitPanel.svelte';
@@ -2255,20 +2254,26 @@
 					/>
 				{:else if tab.kind === 'preview'}
 					{#if tab.embed?.file?.knowledgeId}
-						<Knowledge embed={tab.embed} chatId={chatId ?? ''} />
+						{#await import('./Tabs/Knowledge.svelte') then { default: Knowledge }}
+							<Knowledge embed={tab.embed} chatId={chatId ?? ''} />
+						{/await}
 					{:else}
-						<Embeds embed={tab.embed} overlay={isDragging} />
+						{#await import('./Tabs/Embeds.svelte') then { default: Embeds }}
+							<Embeds embed={tab.embed} overlay={isDragging} />
+						{/await}
 					{/if}
 				{:else if tab.kind === 'artifacts'}
 					{@const source = tabs.tabs.find((item) => item.id === tab.sourceTabId)}
-					<Artifacts
-						overlay={isDragging}
-						artifacts={getArtifactsStore(tab.sourceTabId)}
-						selection={artifactSelections[tab.id] ?? null}
-						chatId={(source?.id !== mainChatTabId && source?.kind === 'chat'
-							? source.chatId
-							: chatView.chatId) ?? ''}
-					/>
+					{#await import('./Artifacts.svelte') then { default: Artifacts }}
+						<Artifacts
+							overlay={isDragging}
+							artifacts={getArtifactsStore(tab.sourceTabId)}
+							selection={artifactSelections[tab.id] ?? null}
+							chatId={(source?.id !== mainChatTabId && source?.kind === 'chat'
+								? source.chatId
+								: chatView.chatId) ?? ''}
+						/>
+					{/await}
 				{:else if tab.kind === 'overview'}
 					{#await import('./Overview.svelte') then { default: Overview }}
 						{@const sourceTabId =
@@ -2331,12 +2336,14 @@
 					{/key}
 				{:else if tab.kind === 'desktop' && target}
 					{#key target.context.modelId}
-						<Desktop
-							target={target!}
-							chatId={chatView.chatId}
-							active={panelVisible && visibleTabIds.has(tab.id)}
-							overlay={isDragging}
-						/>
+						{#await import('./Tabs/Desktop.svelte') then { default: Desktop }}
+							<Desktop
+								target={target!}
+								chatId={chatView.chatId}
+								active={panelVisible && visibleTabIds.has(tab.id)}
+								overlay={isDragging}
+							/>
+						{/await}
 					{/key}
 				{:else if tab.kind === 'browser' || tab.kind === 'terminal'}
 					{#if chatView.pending.has(tab.id)}
@@ -2381,22 +2388,24 @@
 					{:else}
 						{#key `${tab.sessionId}:${sessionAttempts[tab.id] ?? 0}`}
 							{#if tab.kind === 'terminal'}
-								<XTerminal
-									bind:this={terminalViews[tab.id]}
-									target={target!}
-									sessionId={tab.sessionId}
-									active={panelVisible && visibleTabIds.has(tab.id)}
-									overlay={isDragging}
-									onTitleChange={(title, process) => {
-										if (chatView !== viewEntry) return;
-										terminalTitles[tab.sessionId!] = title.trim();
-										terminalProcesses[tab.sessionId!] = process;
-									}}
-									onUnavailable={(message, status) => {
-										if (chatView === viewEntry)
-											sessionFailures = { ...sessionFailures, [tab.id]: { message, status } };
-									}}
-								/>
+								{#await import('./XTerminal.svelte') then { default: XTerminal }}
+									<XTerminal
+										bind:this={terminalViews[tab.id]}
+										target={target!}
+										sessionId={tab.sessionId}
+										active={panelVisible && visibleTabIds.has(tab.id)}
+										overlay={isDragging}
+										onTitleChange={(title, process) => {
+											if (chatView !== viewEntry) return;
+											terminalTitles[tab.sessionId!] = title.trim();
+											terminalProcesses[tab.sessionId!] = process;
+										}}
+										onUnavailable={(message, status) => {
+											if (chatView === viewEntry)
+												sessionFailures = { ...sessionFailures, [tab.id]: { message, status } };
+										}}
+									/>
+								{/await}
 							{:else}
 								<Browser
 									bind:this={browserViews[tab.id]}
@@ -2416,32 +2425,34 @@
 						{/key}
 					{/if}
 				{:else if tab.untitled && target}
-					<UntitledFile
-						initialView={chatView.drafts.get(tab.id)}
-						bind:this={fileViews[tab.id]}
-						bind:dirty={dirtyFiles[tab.id]}
-						label={tab.label}
-						target={target!}
-						initialDirectory={tab.context?.currentDirectory}
-						isOpen={(path) =>
-							tabs.tabs.some(
-								(item) =>
-									item.id !== tab.id &&
-									item.kind === 'file' &&
-									!item.untitled &&
-									item.machineId === tab.machineId &&
-									item.path === path
-							)}
-						onSaved={(path) => {
-							chatView.drafts.delete(tab.id);
-							updateViewTab(chatView, tab.id, {
-								untitled: false,
-								dirty: false,
-								path,
-								label: path.split('/').pop() || path
-							});
-						}}
-					/>
+					{#await import('./Tabs/UntitledFile.svelte') then { default: UntitledFile }}
+						<UntitledFile
+							initialView={chatView.drafts.get(tab.id)}
+							bind:this={fileViews[tab.id]}
+							bind:dirty={dirtyFiles[tab.id]}
+							label={tab.label}
+							target={target!}
+							initialDirectory={tab.context?.currentDirectory}
+							isOpen={(path) =>
+								tabs.tabs.some(
+									(item) =>
+										item.id !== tab.id &&
+										item.kind === 'file' &&
+										!item.untitled &&
+										item.machineId === tab.machineId &&
+										item.path === path
+								)}
+							onSaved={(path) => {
+								chatView.drafts.delete(tab.id);
+								updateViewTab(chatView, tab.id, {
+									untitled: false,
+									dirty: false,
+									path,
+									label: path.split('/').pop() || path
+								});
+							}}
+						/>
+					{/await}
 				{:else if (tab.kind === 'files' || tab.kind === 'file') && tab.machineId}
 					{@const fileTarget = isMounted ? resolveTabConnection(tab) : null}
 					<div class="flex h-full min-h-0 flex-col">
@@ -2507,29 +2518,33 @@
 							{/key}
 						</div>
 						{#if tab.kind === 'files' && fileTarget}
-							<GitBar
-								bind:this={gitViews[tab.id]}
-								initialView={chatView.transient[`git:${tab.id}`]}
-								bind:status={fileGitStatuses[tab.machineId]}
-								bind:diffMode={fileGitDiffModes[tab.machineId]}
-								bind:hideWhitespace={fileGitHideWhitespace[tab.machineId]}
-								target={fileTarget}
-								chatId={chatView.chatId}
-								directory={fileContexts[tab.id]?.currentDirectory ??
-									tab.directory ??
-									tab.path ??
-									'.'}
-								active={panelVisible && visibleTabIds.has(tab.id)}
-								onOpenFile={(path) =>
-									openFile(path, tab.machineId!, null, fileTarget?.context.modelId)}
-								onOpenDirectory={(path) =>
-									openFiles(tab.machineId, path, false, fileTarget?.context.modelId)}
-								{onDraftPrompt}
-							/>
+							{#await import('./Tabs/GitBar.svelte') then { default: GitBar }}
+								<GitBar
+									bind:this={gitViews[tab.id]}
+									initialView={chatView.transient[`git:${tab.id}`]}
+									bind:status={fileGitStatuses[tab.machineId]}
+									bind:diffMode={fileGitDiffModes[tab.machineId]}
+									bind:hideWhitespace={fileGitHideWhitespace[tab.machineId]}
+									target={fileTarget}
+									chatId={chatView.chatId}
+									directory={fileContexts[tab.id]?.currentDirectory ??
+										tab.directory ??
+										tab.path ??
+										'.'}
+									active={panelVisible && visibleTabIds.has(tab.id)}
+									onOpenFile={(path) =>
+										openFile(path, tab.machineId!, null, fileTarget?.context.modelId)}
+									onOpenDirectory={(path) =>
+										openFiles(tab.machineId, path, false, fileTarget?.context.modelId)}
+									{onDraftPrompt}
+								/>
+							{/await}
 						{/if}
 					</div>
 				{:else if tab.kind === 'files' && codeInterpreterEnabled}
-					<PyodideFileNav overlay={isDragging} />
+					{#await import('./PyodideFileNav.svelte') then { default: PyodideFileNav }}
+						<PyodideFileNav overlay={isDragging} />
+					{/await}
 				{/if}
 			</div>
 		{/each}
