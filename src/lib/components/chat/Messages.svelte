@@ -10,7 +10,6 @@
 	import { copyToClipboard, extractCurlyBraceWords, getDeepestChildId } from '$lib/utils';
 	import { getOutputText } from './Messages/structuredOutput';
 
-	import Message from './Messages/Message.svelte';
 	import Loader from '../common/Loader.svelte';
 	import Spinner from '../common/Spinner.svelte';
 
@@ -65,8 +64,24 @@
 
 	export let messagesCount: number | null = 8;
 	let messagesLoading = false;
+	let Message: typeof import('./Messages/Message.svelte').default | undefined;
+	let loadingMessageRenderer: Promise<void> | undefined;
+	let messageRendererFailed = false;
+	let messageListElement: HTMLDivElement;
 
 	const getMessagesContainer = () => document.getElementById(messagesContainerId);
+
+	const loadMessageRenderer = () =>
+		(loadingMessageRenderer ??= import('./Messages/Message.svelte').then(
+			async ({ default: renderer }) => {
+				Message = renderer;
+				await tick();
+				if (autoScroll && messageListElement?.isConnected) scrollToBottom();
+			},
+			() => {
+				messageRendererFailed = true;
+			}
+		));
 
 	onDestroy(() => {
 		cancelAnimationFrame(pendingRebuild);
@@ -143,6 +158,7 @@
 	};
 
 	$: handleHistoryChange(history.currentId, history.messages);
+	$: if (messages.length && !loadingMessageRenderer) void loadMessageRenderer();
 
 	$: if (autoScroll && bottomPadding) {
 		(async () => {
@@ -169,9 +185,12 @@
 	};
 
 	export const scrollToMessage = async (id: string) => {
+		const targetHistory = history;
 		messagesCount = null;
 		buildMessages();
+		if (!Message && messages.length) await loadMessageRenderer();
 		await tick();
+		if (history !== targetHistory) return;
 		const element = getMessagesContainer()?.querySelector<HTMLElement>(
 			`#${CSS.escape(`message-${id}`)}`
 		);
@@ -184,6 +203,10 @@
 	export const scrollToTop = async () => {
 		messagesCount = null;
 		buildMessages();
+		if (!Message && messages.length) {
+			autoScroll = false;
+			await loadMessageRenderer();
+		}
 		await tick();
 
 		const element = getMessagesContainer();
@@ -516,7 +539,7 @@
 	};
 </script>
 
-<div class={className}>
+<div class={className} bind:this={messageListElement}>
 	{#if Object.keys(history?.messages ?? {}).length == 0 || (branchPointMessageId && history?.currentId === branchPointMessageId)}
 		<ChatPlaceholder modelIds={selectedModels} {atSelectedModel} {onSelect} />
 	{:else}
@@ -524,7 +547,7 @@
 			{#key chatId}
 				<section class="w-full" aria-labelledby="chat-conversation">
 					<h2 class="sr-only" id="chat-conversation">{$i18n.t('Chat Conversation')}</h2>
-					{#if messages.at(0)?.parentId !== null && messages.at(0)?.parentId !== branchPointMessageId}
+					{#if Message && messages.length && messages[0].parentId !== null && messages[0].parentId !== branchPointMessageId}
 						<Loader
 							on:visible={(e) => {
 								console.log('visible');
@@ -540,45 +563,56 @@
 						</Loader>
 					{/if}
 					<div role="log" aria-live="polite" aria-relevant="additions" aria-atomic="false">
-						<ul>
-							{#each messages as message, messageIdx (message.id)}
-								<Message
-									{chatId}
-									bind:history
-									selectedModels={atSelectedModel ? [atSelectedModel.id] : selectedModels}
-									messageId={message.id}
-									idx={messageIdx}
-									{user}
-									{setInputText}
-									{gotoMessage}
-									{showPreviousMessage}
-									{showNextMessage}
-									{updateChat}
-									{editMessage}
-									{deleteMessage}
-									{rateMessage}
-									{actionMessage}
-									{saveMessage}
-									{submitMessage}
-									{regenerateResponse}
-									{continueResponse}
-									{mergeResponses}
-									{addMessages}
-									{onToolCallResolved}
-									{forkHandler}
-									{allowDelete}
-									{allowToolApproval}
-									{triggerScroll}
-									{readOnly}
-									{compactPreview}
-									{editCodeBlock}
-									{topPadding}
-									{onInsertToNote}
-									{onOpenArtifacts}
-									{writeAccess}
-								/>
-							{/each}
-						</ul>
+						{#if Message}
+							<ul>
+								{#each messages as message, messageIdx (message.id)}
+									<svelte:component
+										this={Message}
+										{chatId}
+										bind:history
+										selectedModels={atSelectedModel ? [atSelectedModel.id] : selectedModels}
+										messageId={message.id}
+										idx={messageIdx}
+										{user}
+										{setInputText}
+										{gotoMessage}
+										{showPreviousMessage}
+										{showNextMessage}
+										{updateChat}
+										{editMessage}
+										{deleteMessage}
+										{rateMessage}
+										{actionMessage}
+										{saveMessage}
+										{submitMessage}
+										{regenerateResponse}
+										{continueResponse}
+										{mergeResponses}
+										{addMessages}
+										{onToolCallResolved}
+										{forkHandler}
+										{allowDelete}
+										{allowToolApproval}
+										{triggerScroll}
+										{readOnly}
+										{compactPreview}
+										{editCodeBlock}
+										{topPadding}
+										{onInsertToNote}
+										{onOpenArtifacts}
+										{writeAccess}
+									/>
+								{/each}
+							</ul>
+						{:else if messageRendererFailed}
+							<p role="alert" class="p-4 text-center text-sm text-base-500">
+								{$i18n.t('Failed to load chat')}
+							</p>
+						{:else}
+							<p role="status" class="p-4 text-center text-sm text-base-500">
+								{$i18n.t('Loading...')}
+							</p>
+						{/if}
 					</div>
 				</section>
 				<div class="pb-18" />

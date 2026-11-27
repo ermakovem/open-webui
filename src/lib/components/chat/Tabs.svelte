@@ -51,9 +51,7 @@
 	} from '$lib/stores';
 
 	import { commentsRequest, resourceQuery } from '$lib/apis/comments';
-	import CommentsPanel, {
-		type CommentsRequest
-	} from '$lib/components/comments/CommentsPanel.svelte';
+	import type { CommentsRequest } from '$lib/components/comments/CommentsPanel.svelte';
 	import { page } from '$app/stores';
 
 	import {
@@ -2328,11 +2326,21 @@
 					/>
 				{:else if tab.kind === 'comments' && currentComments}
 					{#key `${$user?.id}:$chatId={chatView.chatId}:${currentComments.comment_id ?? ''}`}
-						<CommentsPanel
-							embedded={true}
-							bind:view={currentComments}
-							onCountChange={setCommentCount}
-						/>
+						{#await import('$lib/components/comments/CommentsPanel.svelte')}
+							<p role="status" class="p-4 text-center text-sm text-base-500">
+								{$i18n.t('Loading...')}
+							</p>
+						{:then { default: CommentsPanel }}
+							<CommentsPanel
+								embedded={true}
+								bind:view={currentComments}
+								onCountChange={setCommentCount}
+							/>
+						{:catch}
+							<p role="alert" class="p-4 text-center text-sm text-base-500">
+								{$i18n.t('Something went wrong :/')}
+							</p>
+						{/await}
 					{/key}
 				{:else if tab.kind === 'desktop' && target}
 					{#key target.context.modelId}

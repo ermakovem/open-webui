@@ -8,7 +8,7 @@
 	import Modal from '$lib/components/common/Modal.svelte';
 	import Drawer from '$lib/components/common/Drawer.svelte';
 	import ResizableSidePanel from '$lib/components/common/ResizableSidePanel.svelte';
-	import CommentsPanel, { type CommentsRequest } from './CommentsPanel.svelte';
+	import type { CommentsRequest } from './CommentsPanel.svelte';
 
 	export let children: import('svelte').Snippet | undefined = undefined;
 	export let view: CommentsRequest | null = null;
@@ -68,6 +68,28 @@
 	}}
 />
 
+{#snippet closePanel()}
+	<button type="button" class="underline" on:click={() => (view = null)}>
+		{$i18n.t('Close')}
+	</button>
+{/snippet}
+
+{#snippet panelBody()}
+	{#await import('./CommentsPanel.svelte')}
+		<div class="flex flex-col items-center gap-2 p-4 text-sm text-base-500">
+			<p role="status">{$i18n.t('Loading...')}</p>
+			{@render closePanel()}
+		</div>
+	{:then { default: CommentsPanel }}
+		<CommentsPanel bind:view {modal} onClose={() => (view = null)} />
+	{:catch}
+		<div class="flex flex-col items-center gap-2 p-4 text-sm text-base-500">
+			<p role="alert">{$i18n.t('Something went wrong :/')}</p>
+			{@render closePanel()}
+		</div>
+	{/await}
+{/snippet}
+
 {#snippet panel()}
 	{#if view && enabled}
 		{#key `${$user.id}:${view.resource_type}:${view.resource_id}:${view.comment_id ?? ''}`}
@@ -80,12 +102,12 @@
 					onRequestClose={() => (view = null)}
 				>
 					<div class="h-[min(70dvh,40rem)]">
-						<CommentsPanel bind:view {modal} onClose={() => (view = null)} />
+						{@render panelBody()}
 					</div>
 				</Modal>
 			{:else if $mobile}
 				<Drawer show={true} ariaLabel={$i18n.t('Comments')} onClose={() => (view = null)}>
-					<div class="h-dvh"><CommentsPanel bind:view onClose={() => (view = null)} /></div>
+					<div class="h-dvh">{@render panelBody()}</div>
 				</Drawer>
 			{:else}
 				<ResizableSidePanel
@@ -101,7 +123,7 @@
 					onClose={() => (view = null)}
 				>
 					<aside aria-label={$i18n.t('Comments')} class="h-full w-full">
-						<CommentsPanel bind:view onClose={() => (view = null)} />
+						{@render panelBody()}
 					</aside>
 				</ResizableSidePanel>
 			{/if}

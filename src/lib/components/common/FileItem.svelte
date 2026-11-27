@@ -6,7 +6,6 @@
 	import type { AppLayoutContext } from '$lib/types';
 	import { embed, settings, showEmbeds, showFileNavPath, showTabs, user } from '$lib/stores';
 
-	import FileItemModal from './FileItemModal.svelte';
 	import GarbageBin from '../icons/GarbageBin.svelte';
 	import Spinner from './Spinner.svelte';
 	import Tooltip from './Tooltip.svelte';
@@ -88,8 +87,19 @@
 	};
 </script>
 
-{#if item}
-	<FileItemModal bind:show={showModal} bind:item {edit} />
+{#if item && showModal}
+	{#await import('./FileItemModal.svelte')}
+		<p role="status" class="sr-only">{$i18n.t('Loading...')}</p>
+	{:then { default: FileItemModal }}
+		<FileItemModal bind:show={showModal} bind:item {edit} />
+	{:catch}
+		<p role="alert" class="p-2 text-xs text-base-500">
+			{$i18n.t('Preview failed')}
+			<button type="button" class="underline" on:click={() => (showModal = false)}>
+				{$i18n.t('Close')}
+			</button>
+		</p>
+	{/await}
 {/if}
 
 <div class="relative group {className}">

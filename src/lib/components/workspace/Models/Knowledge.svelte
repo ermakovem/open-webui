@@ -4,7 +4,6 @@
 	import { config, settings, user } from '$lib/stores';
 
 	import KnowledgeSelector from './Knowledge/KnowledgeSelector.svelte';
-	import FileItemModal from '$lib/components/common/FileItemModal.svelte';
 	import Tooltip from '$lib/components/common/Tooltip.svelte';
 	import Spinner from '$lib/components/common/Spinner.svelte';
 	import ChatBubble from '$lib/components/icons/ChatBubble.svelte';
@@ -153,7 +152,18 @@
 </script>
 
 {#if showItemModal && selectedItemIdx !== null && selectedItems[selectedItemIdx]}
-	<FileItemModal bind:show={showItemModal} bind:item={selectedItems[selectedItemIdx]} edit={true} />
+	{#await import('$lib/components/common/FileItemModal.svelte')}
+		<p role="status" class="sr-only">{$i18n.t('Loading...')}</p>
+	{:then { default: FileItemModal }}
+		<FileItemModal bind:show={showItemModal} bind:item={selectedItems[selectedItemIdx]} edit={true} />
+	{:catch}
+		<p role="alert" class="p-2 text-xs text-base-500">
+			{$i18n.t('Preview failed')}
+			<button type="button" class="underline" on:click={() => (showItemModal = false)}>
+				{$i18n.t('Close')}
+			</button>
+		</p>
+	{/await}
 {/if}
 
 <input
