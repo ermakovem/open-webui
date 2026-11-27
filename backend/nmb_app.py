@@ -166,7 +166,9 @@ async def app(scope, receive, send):
             'sessionStorage.clear();location.replace(location.href)</script>',
             headers={"Cache-Control": "no-store", "Clear-Site-Data": '"cache", "storage"'},
         )
-        response.set_cookie("nmb_chat_profile", email, secure=True, httponly=True, samesite="strict")
+        # This marker only detects profile changes. Send it on top-level links
+        # so links from other sites don't clear the current profile's cache.
+        response.set_cookie("nmb_chat_profile", email, secure=True, httponly=True, samesite="lax")
         response.delete_cookie("token", secure=True, httponly=True, samesite="strict")
         return await response(scope, receive, send)
 
